@@ -55,15 +55,26 @@ namespace MatterHackers.DataConverters3D
 			}
 		}
 
+		public static IObject3D DescendantsAndSelfMultipleChildrenFirstOrSelf(this IObject3D item)
+		{
+			var parentOfMultipleChildren = item.DescendantsAndSelf().Where(i => i.Children.Count > 1).FirstOrDefault() as Object3D;
+			if (parentOfMultipleChildren == null)
+			{
+				return item;
+			}
+
+			return parentOfMultipleChildren;
+		}
+
 		public static int Depth(this IObject3D item)
 		{
-			return item.Parents<IObject3D>().Count();
+			return item.Ancestors().Count();
 		}
 
 		[System.Diagnostics.Conditional("DEBUG")]
 		public static void DebugDepth(this IObject3D item, string extra = "")
 		{
-			Debug.WriteLine(new String(' ', item.Depth()) + $"({item.Depth()}) {item.GetType().Name} " + extra);
+			Debug.WriteLine(new string(' ', item.Depth()) + $"({item.Depth()}) {item.GetType().Name} " + extra);
 		}
 
 		private static void LoadLinkedMesh(this IObject3D item, CacheContext cacheContext, CancellationToken cancellationToken, Action<double, string> progress)
@@ -71,26 +82,10 @@ namespace MatterHackers.DataConverters3D
 			// Abort load if cancel requested
 			cancellationToken.ThrowIfCancellationRequested();
 
-			// Natural path
-			string filePath = item.MeshPath;
-
-			// If relative/asset file name
-			if (Path.GetDirectoryName(filePath) == "")
-			{
-				string sha1PlusExtension = filePath;
-
-				filePath = Path.Combine(Object3D.AssetsPath, sha1PlusExtension);
-
-				// If the asset is not in the local cache folder, acquire it
-				if (!File.Exists(filePath))
-				{
-					// *************************************************************************
-					// TODO: Fix invalid use of Wait()
-					// *************************************************************************
-					// Prime cache
-					AssetObject3D.AssetManager.AcquireAsset(sha1PlusExtension, cancellationToken, progress).Wait();
-				}
-			}
+			// *************************************************************************
+			// TODO: Fix invalid use of Result
+			// *************************************************************************
+			string filePath = item.ResolveFilePath(progress, cancellationToken).Result;
 
 			if (string.Equals(Path.GetExtension(filePath), ".mcx", StringComparison.OrdinalIgnoreCase))
 			{
@@ -126,9 +121,32 @@ namespace MatterHackers.DataConverters3D
 			}
 		}
 
-		public static void SaveTo(this IObject3D sourceItem, Stream outputStream, Action<double, string> progress = null)
+		public static async Task<string> ResolveFilePath(this IObject3D item, Action<double, string> progress, CancellationToken cancellationToken)
 		{
-			sourceItem.PersistAssets(progress);
+			// Natural path
+			string filePath = item.MeshPath;
+
+			// If relative/asset file name
+			if (Path.GetDirectoryName(filePath) == "")
+			{
+				string sha1PlusExtension = filePath;
+
+				filePath = Path.Combine(Object3D.AssetsPath, sha1PlusExtension);
+
+				// If the asset is not in the local cache folder, acquire it
+				if (!File.Exists(filePath))
+				{
+					// Prime cache
+					await AssetObject3D.AssetManager.AcquireAsset(sha1PlusExtension, cancellationToken, progress);
+				}
+			}
+
+			return filePath;
+		}
+
+		public static async void SaveTo(this IObject3D sourceItem, Stream outputStream, Action<double, string> progress = null)
+		{
+			await sourceItem.PersistAssets(progress);
 
 			var streamWriter = new StreamWriter(outputStream);
 			streamWriter.Write(sourceItem.ToJson());
@@ -138,6 +156,74 @@ namespace MatterHackers.DataConverters3D
 		public static void Fit(this WorldView world, IObject3D itemToRender, RectangleDouble goalBounds)
 		{
 			world.Fit(itemToRender, goalBounds, Matrix4X4.Identity);
+		}
+
+		public static Matrix4X4 GetXYInViewRotation(this WorldView world, Vector3 center)
+		{
+			var positions = new Vector3[]
+			{
+				center + new Vector3(1, 0, 0),
+				center + new Vector3(0, 1, 0),
+				center + new Vector3(-1, 0, 0),
+				center + new Vector3(0, -1, 0),
+			};
+
+			double bestX = double.NegativeInfinity;
+			int indexX = 0;
+			// get the closest z on the bottom in view space
+			for (int cornerIndex = 0; cornerIndex < 4; cornerIndex++)
+			{
+				Vector3 axisSide = positions[cornerIndex];
+				Vector3 axisSideScreenSpace = world.GetScreenSpace(axisSide);
+
+				if (axisSideScreenSpace.X > bestX)
+				{
+					indexX = cornerIndex;
+					bestX = axisSideScreenSpace.X;
+				}
+			}
+
+			var transform = Matrix4X4.Identity;
+			switch (indexX)
+			{
+				case 0:
+					// transform = Matrix4X4.CreateRotationZ(0);
+					break;
+
+				case 1:
+					transform = Matrix4X4.CreateRotationZ(MathHelper.Tau / 4);
+					break;
+
+				case 2:
+					transform = Matrix4X4.CreateRotationZ(-MathHelper.Tau / 2);
+					break;
+
+				case 3:
+					transform = Matrix4X4.CreateRotationZ(MathHelper.Tau * 3 / 4);
+					break;
+			}
+
+			return transform;
+		}
+
+		public static AxisAlignedBoundingBox GetAxisAlignedBoundingBox(this IEnumerable<IObject3D> items)
+		{
+			var aabb = AxisAlignedBoundingBox.Empty();
+			foreach (var item in items)
+			{
+				aabb += item.GetAxisAlignedBoundingBox();
+			}
+
+			return aabb;
+		}
+
+		public static void Translate(this IEnumerable<IObject3D> items, Vector3 translation)
+		{
+			var matrix = Matrix4X4.CreateTranslation(translation);
+			foreach (var item in items)
+			{
+				item.Matrix *= matrix;
+			}
 		}
 
 		public static void Fit(this WorldView world, IObject3D itemToRender, RectangleDouble goalBounds, Matrix4X4 offset)
@@ -156,7 +242,7 @@ namespace MatterHackers.DataConverters3D
 
 				if (!NeedsToBeSmaller(partScreenBounds, goalBounds))
 				{
-					world.Scale *= (1 + scaleFraction);
+					world.Scale *= 1 + scaleFraction;
 					partScreenBounds = GetScreenBounds(meshBounds, world);
 
 					// If it crossed over the goal reduct the amount we are adjusting by.
@@ -167,7 +253,7 @@ namespace MatterHackers.DataConverters3D
 				}
 				else
 				{
-					world.Scale *= (1 - scaleFraction);
+					world.Scale *= 1 - scaleFraction;
 					partScreenBounds = GetScreenBounds(meshBounds, world);
 
 					// If it crossed over the goal reduct the amount we are adjusting by.
@@ -200,31 +286,31 @@ namespace MatterHackers.DataConverters3D
 		{
 			RectangleDouble screenBounds = RectangleDouble.ZeroIntersection;
 
-			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.minXYZ.X, meshBounds.minXYZ.Y, meshBounds.minXYZ.Z)));
-			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.maxXYZ.X, meshBounds.minXYZ.Y, meshBounds.minXYZ.Z)));
-			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.maxXYZ.X, meshBounds.maxXYZ.Y, meshBounds.minXYZ.Z)));
-			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.minXYZ.X, meshBounds.maxXYZ.Y, meshBounds.minXYZ.Z)));
+			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.MinXYZ.X, meshBounds.MinXYZ.Y, meshBounds.MinXYZ.Z)));
+			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.MaxXYZ.X, meshBounds.MinXYZ.Y, meshBounds.MinXYZ.Z)));
+			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.MaxXYZ.X, meshBounds.MaxXYZ.Y, meshBounds.MinXYZ.Z)));
+			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.MinXYZ.X, meshBounds.MaxXYZ.Y, meshBounds.MinXYZ.Z)));
 
-			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.minXYZ.X, meshBounds.minXYZ.Y, meshBounds.maxXYZ.Z)));
-			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.maxXYZ.X, meshBounds.minXYZ.Y, meshBounds.maxXYZ.Z)));
-			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.maxXYZ.X, meshBounds.maxXYZ.Y, meshBounds.maxXYZ.Z)));
-			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.minXYZ.X, meshBounds.maxXYZ.Y, meshBounds.maxXYZ.Z)));
+			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.MinXYZ.X, meshBounds.MinXYZ.Y, meshBounds.MaxXYZ.Z)));
+			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.MaxXYZ.X, meshBounds.MinXYZ.Y, meshBounds.MaxXYZ.Z)));
+			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.MaxXYZ.X, meshBounds.MaxXYZ.Y, meshBounds.MaxXYZ.Z)));
+			screenBounds.ExpandToInclude(world.GetScreenPosition(new Vector3(meshBounds.MinXYZ.X, meshBounds.MaxXYZ.Y, meshBounds.MaxXYZ.Z)));
 			return screenBounds;
 		}
 
-		public static async Task PersistAssets(this IObject3D sourceItem, Action<double, string> progress = null, bool publishAssets=false)
+		public static async Task PersistAssets(this IObject3D sourceItem, Action<double, string> progress = null, bool publishAssets = false)
 		{
 			// Must use DescendantsAndSelf so that leaf nodes save their meshes
 			var persistableItems = from object3D in sourceItem.DescendantsAndSelf()
-										 where object3D.WorldPersistable() &&
-												(((object3D.MeshPath == null || publishAssets) && object3D.Mesh != null)
-												|| (object3D is IAssetObject && publishAssets))
-												&& object3D.Mesh != Object3D.FileMissingMesh // Ignore items assigned the FileMissing mesh
+								   where object3D.WorldPersistable() &&
+										  (((object3D.MeshPath == null || publishAssets) && object3D.Mesh != null)
+										  || (object3D is IAssetObject && publishAssets))
+										  && object3D.Mesh != Object3D.FileMissingMesh // Ignore items assigned the FileMissing mesh
 								   select object3D;
 
 			Directory.CreateDirectory(Object3D.AssetsPath);
 
-			var assetFiles = new Dictionary<int, string>();
+			var assetFiles = new Dictionary<ulong, string>();
 
 			try
 			{
@@ -243,7 +329,7 @@ namespace MatterHackers.DataConverters3D
 					}
 
 					// Calculate the fast mesh hash
-					int hashCode = (int)item.Mesh.GetLongHashCode();
+					ulong hashCode = item.Mesh.GetLongHashCode();
 
 					// Index into dictionary using fast hash
 					if (!assetFiles.TryGetValue(hashCode, out string assetPath))
@@ -268,10 +354,10 @@ namespace MatterHackers.DataConverters3D
 		public static AxisAlignedBoundingBox GetUnionedAxisAlignedBoundingBox(this IEnumerable<IObject3D> items)
 		{
 			// first find the bounds of what is already here.
-			AxisAlignedBoundingBox totalBounds = AxisAlignedBoundingBox.Empty;
+			AxisAlignedBoundingBox totalBounds = AxisAlignedBoundingBox.Empty();
 			foreach (var object3D in items)
 			{
-				totalBounds = AxisAlignedBoundingBox.Union(totalBounds, object3D.GetAxisAlignedBoundingBox(Matrix4X4.Identity));
+				totalBounds = AxisAlignedBoundingBox.Union(totalBounds, object3D.GetAxisAlignedBoundingBox());
 			}
 
 			return totalBounds;
@@ -292,9 +378,19 @@ namespace MatterHackers.DataConverters3D
 			return matrix;
 		}
 
-		public static IEnumerable<IObject3D> Ancestors(this IObject3D child)
+		public static AxisAlignedBoundingBox WorldAxisAlignedBoundingBox(this IObject3D child)
 		{
-			var parent = child.Parent;
+			return child.GetAxisAlignedBoundingBox(child.Parent.WorldMatrix());
+		}
+
+		/// <summary>
+		/// Returns all ancestors of the given object
+		/// </summary>
+		/// <param name="item">The context item</param>
+		/// <returns>The matching ancestor items</returns>
+		public static IEnumerable<IObject3D> Ancestors(this IObject3D item)
+		{
+			var parent = item.Parent;
 			while (parent != null)
 			{
 				yield return parent;
@@ -302,10 +398,10 @@ namespace MatterHackers.DataConverters3D
 			}
 		}
 
-		public static IEnumerable<IObject3D> AncestorsAndSelf(this IObject3D child)
+		public static IEnumerable<IObject3D> AncestorsAndSelf(this IObject3D item)
 		{
-			yield return child;
-			var parent = child.Parent;
+			yield return item;
+			var parent = item.Parent;
 			while (parent != null)
 			{
 				yield return parent;
@@ -316,7 +412,7 @@ namespace MatterHackers.DataConverters3D
 		public static Color WorldColor(this IObject3D child, IObject3D rootOverride = null)
 		{
 			var lastColorFound = Color.White;
-			foreach(var item in child.AncestorsAndSelf())
+			foreach (var item in child.AncestorsAndSelf())
 			{
 				// if we find a color it overrides our current color so set it
 				if (item.Color.Alpha0To255 != 0)
@@ -375,6 +471,25 @@ namespace MatterHackers.DataConverters3D
 			return lastOutputTypeFound;
 		}
 
+		public static bool WorldVisible(this IObject3D child, IObject3D rootOverride = null)
+		{
+			foreach (var item in child.AncestorsAndSelf())
+			{
+				if (!item.Visible)
+				{
+					return false;
+				}
+
+				// If the root override has been matched, break and return latest
+				if (item == rootOverride)
+				{
+					break;
+				}
+			}
+
+			return true;
+		}
+
 		public static int WorldMaterialIndex(this IObject3D child, IObject3D rootOverride = null)
 		{
 			var lastMaterialIndexFound = -1;
@@ -397,23 +512,30 @@ namespace MatterHackers.DataConverters3D
 			return lastMaterialIndexFound;
 		}
 
-		public static List<RebuildLock> RebuilLockAll(this IObject3D parent)
+		public class RebuildLocks : IDisposable
 		{
-			var resumeLocks = new List<RebuildLock>();
-			foreach (var item in parent.DescendantsAndSelf())
+			private readonly List<RebuildLock> rebuilLocks = new List<RebuildLock>();
+
+			public RebuildLocks(IObject3D parent)
 			{
-				resumeLocks.Add(item.RebuildLock());
+				foreach (var item in parent.DescendantsAndSelf())
+				{
+					rebuilLocks.Add(item.RebuildLock());
+				}
 			}
 
-			return resumeLocks;
+			public void Dispose()
+			{
+				foreach (var rebuildLock in rebuilLocks)
+				{
+					rebuildLock.Dispose();
+				}
+			}
 		}
 
-		public static void ResumeAll(this List<RebuildLock> resumeLocks)
+		public static RebuildLocks RebuilLockAll(this IObject3D parent)
 		{
-			foreach (var resumeLock in resumeLocks)
-			{
-				resumeLock.Dispose();
-			}
+			return new RebuildLocks(parent);
 		}
 
 		public static IEnumerable<IObject3D> DescendantsAndSelf(this IObject3D root)
@@ -428,26 +550,6 @@ namespace MatterHackers.DataConverters3D
 				{
 					items.Push(n);
 				}
-			}
-		}
-
-		/// <summary>
-		/// Returns all ancestors of the current IObject3D matching the given type
-		/// </summary>
-		/// <typeparam name="T">The type filter</typeparam>
-		/// <param name="item">The context item</param>
-		/// <returns>The matching ancestor item</returns>
-		public static IEnumerable<T> Parents<T>(this IObject3D item) where T : IObject3D
-		{
-			IObject3D context = item.Parent;
-			while (context != null)
-			{
-				if (context is T)
-				{
-					yield return (T)context;
-				}
-
-				context = context.Parent;
 			}
 		}
 
@@ -473,6 +575,7 @@ namespace MatterHackers.DataConverters3D
 				{
 					yield return asType;
 				}
+
 				foreach (var n in item.Children)
 				{
 					items.Push(n);
@@ -490,48 +593,53 @@ namespace MatterHackers.DataConverters3D
 			item.Matrix *= Matrix4X4.CreateTranslation(origin);
 		}
 
-		public static IPrimitive CreateTraceData(this Mesh mesh, int maxRecursion = int.MaxValue)
+		public static IPrimitive CreateTraceData(this Mesh mesh)
 		{
-			List<IPrimitive> allPolys = new List<IPrimitive>();
-			List<Vector3> positions = new List<Vector3>();
-			List<Vector2> uvs = new List<Vector2>();
+			return CreateTraceData(mesh, null, Matrix4X4.Identity);
+		}
 
-			foreach (Face face in mesh.Faces)
-			{
-				positions.Clear();
-				bool hasTexture = false;
+		public static IPrimitive CreateTraceData(this Mesh mesh, MaterialAbstract material, Matrix4X4 matrix, int maxRecursion = int.MaxValue)
+		{
+			var allPolys = new List<IPrimitive>();
 
-				foreach (FaceEdge faceEdge in face.FaceEdges())
-				{
-					if (mesh.TextureUV.ContainsKey((faceEdge, 0)))
-					{
-						uvs.Add(faceEdge.GetUv(0));
-						hasTexture = true;
-					}
-					positions.Add(faceEdge.FirstVertex.Position);
-				}
-
-				// We should use the tessellator for this if it is greater than 3.
-				Vector3 next = positions[1];
-				Vector2 nextuv = hasTexture ? uvs[1] : Vector2.Zero;
-				for (int positionIndex = 2; positionIndex < positions.Count; positionIndex++)
-				{
-					TriangleShape triangel;
-					if (hasTexture)
-					{
-						triangel = new TriangleShapeUv(positions[0], next, positions[positionIndex],
-							uvs[0], nextuv, uvs[positionIndex], null);
-					}
-					else
-					{
-						triangel = new TriangleShape(positions[0], next, positions[positionIndex], null);
-					}
-					allPolys.Add(triangel);
-					next = positions[positionIndex];
-				}
-			}
+			mesh.AddTracePrimitives(material, matrix, allPolys);
 
 			return BoundingVolumeHierarchy.CreateNewHierachy(allPolys, maxRecursion);
+		}
+
+		public static void AddTracePrimitives(this Mesh mesh, MaterialAbstract material, Matrix4X4 matrix, List<IPrimitive> tracePrimitives)
+		{
+			for (int faceIndex = 0; faceIndex < mesh.Faces.Count; faceIndex++)
+			{
+				var face = mesh.Faces[faceIndex];
+
+				IPrimitive triangle;
+				if (material != null)
+				{
+					triangle = new TriangleShape(
+						mesh.Vertices[face.v0].Transform(matrix),
+						mesh.Vertices[face.v1].Transform(matrix),
+						mesh.Vertices[face.v2].Transform(matrix),
+						material);
+				}
+				else
+				{
+					triangle = new MinimalTriangle((fi, vi) =>
+					{
+						switch (vi)
+						{
+							case 0:
+								return mesh.Vertices[mesh.Faces[fi].v0];
+							case 1:
+								return mesh.Vertices[mesh.Faces[fi].v1];
+							default:
+								return mesh.Vertices[mesh.Faces[fi].v2];
+						}
+					}, faceIndex);
+				}
+
+				tracePrimitives.Add(triangle);
+			}
 		}
 
 		/// <summary>
@@ -539,8 +647,8 @@ namespace MatterHackers.DataConverters3D
 		/// </summary>
 		/// <param name="objectToCollapse">The object to collapse</param>
 		/// <param name="collapseInto">The target to collapse into</param>
-		/// <param name="typeFilter">Type filter</param>
-		/// <param name="depth">?</param>
+		/// <param name="filterToSelectionGroup">State if should filter</param>
+		/// <param name="depth">The maximum times to recurse this function</param>
 		public static void CollapseInto(this IObject3D objectToCollapse, List<IObject3D> collapseInto, bool filterToSelectionGroup = true, int depth = int.MaxValue)
 		{
 			if (objectToCollapse != null

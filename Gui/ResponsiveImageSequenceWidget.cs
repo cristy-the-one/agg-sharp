@@ -164,7 +164,7 @@ namespace MatterHackers.Agg.UI
 			base.OnMouseMove(mouseEvent);
 		}
 
-		public override void OnClick(MouseEventArgs mouseEvent)
+		protected override void OnClick(MouseEventArgs mouseEvent)
 		{
 			if (ImageBounds.Contains(mouseEvent.Position))
 			{
@@ -174,7 +174,7 @@ namespace MatterHackers.Agg.UI
 
 		public override void OnDraw(Graphics2D graphics2D)
 		{
-			if (ImageSequence != null)
+			if (this.ImageSequence?.Frames.Count > 0)
 			{
 				var imageBounds = ImageBounds;
 				var currentImage = ImageSequence.GetImageByTime(currentTime);

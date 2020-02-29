@@ -27,39 +27,44 @@ of the authors and should not be interpreted as representing official policies,
 either expressed or implied, of the FreeBSD Project.
 */
 
+using System;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using MatterHackers.Agg;
 using MatterHackers.PolygonMesh;
 using MatterHackers.VectorMath;
-using System;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace MatterHackers.RenderOpenGl
 {
+	interface IEdgeLinesContainer
+	{
+		VectorPOD<WireVertexData> EdgeLines { get; }
+	}
+
 	public struct WireVertexData
 	{
-		public float positionsX;
-		public float positionsY;
-		public float positionsZ;
+		public float PositionsX;
+		public float PositionsY;
+		public float PositionsZ;
 
 		public static readonly int Stride = Marshal.SizeOf(default(WireVertexData));
 	}
 
-	public class GLMeshWirePlugin
+	public class GLMeshWirePlugin : IEdgeLinesContainer
 	{
 		public delegate void DrawToGL(Mesh meshToRender);
 
 		public static string GLMeshWirePluginName => nameof(GLMeshWirePluginName);
 
-		public VectorPOD<WireVertexData> edgeLinesData = new VectorPOD<WireVertexData>();
+		public VectorPOD<WireVertexData> EdgeLines { get; private set; } = new VectorPOD<WireVertexData>();
 
 		private int meshUpdateCount;
 		private double nonPlanarAngleRequired;
 
-		static public GLMeshWirePlugin Get(Mesh mesh, double nonPlanarAngleRequired = 0)
+		public static GLMeshWirePlugin Get(Mesh mesh, double nonPlanarAngleRequired = 0, Action meshChanged = null)
 		{
-			object meshData;
-			mesh.PropertyBag.TryGetValue(GLMeshWirePluginName, out meshData);
+			mesh.PropertyBag.TryGetValue(GLMeshWirePluginName, out object meshData);
 			if (meshData is GLMeshWirePlugin plugin)
 			{
 				if (mesh.ChangedCount == plugin.meshUpdateCount
@@ -73,8 +78,8 @@ namespace MatterHackers.RenderOpenGl
 				mesh.PropertyBag.Remove(GLMeshWirePluginName);
 			}
 
-			GLMeshWirePlugin newPlugin = new GLMeshWirePlugin();
-			newPlugin.CreateRenderData(mesh, nonPlanarAngleRequired);
+			var newPlugin = new GLMeshWirePlugin();
+			newPlugin.CreateRenderData(mesh, nonPlanarAngleRequired, meshChanged);
 			newPlugin.meshUpdateCount = mesh.ChangedCount;
 			mesh.PropertyBag.Add(GLMeshWirePluginName, newPlugin);
 
@@ -86,49 +91,65 @@ namespace MatterHackers.RenderOpenGl
 			// This is private as you can't build one of these. You have to call GetImageGLDisplayListPlugin.
 		}
 
-		private void CreateRenderData(Mesh meshToBuildListFor, double nonPlanarAngleRequired = 0)
+		private void CreateRenderData(Mesh mesh, double nonPlanarAngleRequired = 0, Action meshChanged = null)
 		{
 			this.nonPlanarAngleRequired = nonPlanarAngleRequired;
-			edgeLinesData = new VectorPOD<WireVertexData>();
-			// first make sure all the textures are created
-			foreach (MeshEdge meshEdge in meshToBuildListFor.MeshEdges)
+			var edgeLines = new VectorPOD<WireVertexData>();
+
+			// create a quick edge list of all the polygon edges
+			for (int faceIndex = 0; faceIndex < mesh.Faces.Count; faceIndex++)
 			{
-				if (nonPlanarAngleRequired > 0)
+				var face = mesh.Faces[faceIndex];
+				AddVertex(edgeLines, mesh.Vertices[face.v0], mesh.Vertices[face.v1]);
+				AddVertex(edgeLines, mesh.Vertices[face.v1], mesh.Vertices[face.v2]);
+				AddVertex(edgeLines, mesh.Vertices[face.v2], mesh.Vertices[face.v0]);
+			}
+
+			this.EdgeLines = edgeLines;
+
+			// if we are trying to have a filtered list do this in a background thread and wait for the results
+			if (nonPlanarAngleRequired > 0)
+			{
+				Task.Run(() =>
 				{
-					if (meshEdge.GetNumFacesSharingEdge() == 2)
+					var meshEdgeList = mesh.NewMeshEdges();
+
+					var filteredEdgeLines = new VectorPOD<WireVertexData>();
+
+					foreach (var meshEdge in meshEdgeList)
 					{
-						FaceEdge firstFaceEdge = meshEdge.firstFaceEdge;
-						FaceEdge nextFaceEdge = meshEdge.firstFaceEdge.RadialNextFaceEdge;
-						double angle = Vector3.CalculateAngle(firstFaceEdge.ContainingFace.Normal, nextFaceEdge.ContainingFace.Normal);
-						if (angle > MathHelper.Tau * .1)
+						if (meshEdge.Faces.Count() == 2)
 						{
-							edgeLinesData.Add(AddVertex(meshEdge.VertexOnEnd[0].Position, meshEdge.VertexOnEnd[1].Position));
+							var faceNormal0 = mesh.Faces[meshEdge.Faces[0]].normal;
+							var faceNormal1 = mesh.Faces[meshEdge.Faces[1]].normal;
+							double angle = faceNormal0.CalculateAngle(faceNormal1);
+							if (angle > nonPlanarAngleRequired)
+							{
+								AddVertex(filteredEdgeLines,
+									mesh.Vertices[meshEdge.Vertex0Index],
+									mesh.Vertices[meshEdge.Vertex1Index]);
+							}
 						}
 					}
-					else
-					{
-						edgeLinesData.Add(AddVertex(meshEdge.VertexOnEnd[0].Position, meshEdge.VertexOnEnd[1].Position));
-					}
-				}
-				else
-				{
-					edgeLinesData.Add(AddVertex(meshEdge.VertexOnEnd[0].Position, meshEdge.VertexOnEnd[1].Position));
-				}
+
+					this.EdgeLines = filteredEdgeLines;
+					meshChanged?.Invoke();
+				});
 			}
 		}
 
-		private WireVertexData AddVertex(Vector3 vertex0, Vector3 vertex1)
+		private void AddVertex(VectorPOD<WireVertexData> edgeLines, Vector3Float vertex0, Vector3Float vertex1)
 		{
 			WireVertexData tempVertex;
-			tempVertex.positionsX = (float)vertex0.X;
-			tempVertex.positionsY = (float)vertex0.Y;
-			tempVertex.positionsZ = (float)vertex0.Z;
-			edgeLinesData.Add(tempVertex);
+			tempVertex.PositionsX = (float)vertex0.X;
+			tempVertex.PositionsY = (float)vertex0.Y;
+			tempVertex.PositionsZ = (float)vertex0.Z;
+			edgeLines.Add(tempVertex);
 
-			tempVertex.positionsX = (float)vertex1.X;
-			tempVertex.positionsY = (float)vertex1.Y;
-			tempVertex.positionsZ = (float)vertex1.Z;
-			return tempVertex;
+			tempVertex.PositionsX = (float)vertex1.X;
+			tempVertex.PositionsY = (float)vertex1.Y;
+			tempVertex.PositionsZ = (float)vertex1.Z;
+			edgeLines.Add(tempVertex);
 		}
 
 		public void Render()

@@ -17,7 +17,6 @@
 //          http://www.antigrain.com
 //----------------------------------------------------------------------------
 using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -30,23 +29,28 @@ namespace MatterHackers.Agg.UI
 {
 	public abstract class WinformsSystemWindow : Form, IPlatformWindow
 	{
-		private static Stack<SystemWindow> allOpenSystemWindows = new Stack<SystemWindow>();
-
 		public static bool SingleWindowMode { get; set; } = false;
 
-		public bool IsInitialized { get; set; } = false;
+		public static bool EnableInputHook { get; set; } = true;
 
-		public static bool EnableInputHook = true;
+		public static bool ShowingSystemDialog { get; set; } = false;
+
+		public static WinformsSystemWindow MainWindowsFormsWindow { get; private set; }
+
+		public static Func<SystemWindow, FormInspector> InspectorCreator { get; set; }
 
 		private static System.Timers.Timer idleCallBackTimer = null;
 
 		private static bool processingOnIdle = false;
 
-		private static object singleInvokeLock = new object();
+		private static readonly object SingleInvokeLock = new object();
 
 		protected WinformsEventSink EventSink;
 
 		private SystemWindow systemWindow;
+		private int drawCount = 0;
+		private int onPaintCount;
+
 		public SystemWindow AggSystemWindow
 		{
 			get => systemWindow;
@@ -60,6 +64,11 @@ namespace MatterHackers.Agg.UI
 
 					if (SingleWindowMode)
 					{
+						if (firstWindow)
+						{
+							this.MinimumSize = systemWindow.MinimumSize;
+						}
+
 						// Set this system window as the event target
 						this.EventSink?.SetActiveSystemWindow(systemWindow);
 					}
@@ -72,6 +81,8 @@ namespace MatterHackers.Agg.UI
 		}
 
 		public bool IsMainWindow { get; } = false;
+
+		public bool IsInitialized { get; set; } = false;
 
 		public WinformsSystemWindow()
 		{
@@ -123,7 +134,7 @@ namespace MatterHackers.Agg.UI
 
 		public void ReleaseOnIdleGuard()
 		{
-			lock (singleInvokeLock)
+			lock (SingleInvokeLock)
 			{
 				processingOnIdle = false;
 			}
@@ -133,7 +144,7 @@ namespace MatterHackers.Agg.UI
 		{
 			if (!this.IsDisposed)
 			{
-				lock (singleInvokeLock)
+				lock (SingleInvokeLock)
 				{
 					if (processingOnIdle)
 					{
@@ -144,40 +155,30 @@ namespace MatterHackers.Agg.UI
 					processingOnIdle = true;
 				}
 
-				if (InvokeRequired)
+				try
 				{
-					Invoke(new Action(() =>
+					if (InvokeRequired)
 					{
-						try
-						{
-							UiThread.InvokePendingActions();
-						}
-						catch (Exception invokeException)
-						{
-#if DEBUG
-							lock (singleInvokeLock)
-							{
-								processingOnIdle = false;
-							}
-
-							throw (invokeException);
-#endif
-						}
-
-						lock (singleInvokeLock)
-						{
-							processingOnIdle = false;
-						}
-					}));
+						Invoke(new Action(UiThread.InvokePendingActions));
+					}
+					else
+					{
+						UiThread.InvokePendingActions();
+					}
 				}
-				else
+				catch (Exception ex)
 				{
-					UiThread.InvokePendingActions();
+					Console.WriteLine(ex.Message);
+				}
+				finally
+				{
+					lock (SingleInvokeLock)
+					{
+						processingOnIdle = false;
+					}
 				}
 			}
 		}
-
-		public static bool ShowingSystemDialog = false;
 
 		public abstract Graphics2D NewGraphics2D();
 
@@ -203,13 +204,25 @@ namespace MatterHackers.Agg.UI
 			Rectangle rect = paintEventArgs.ClipRectangle;
 			if (ClientSize.Width > 0 && ClientSize.Height > 0)
 			{
-				DrawCount++;
+				drawCount++;
 
 				var graphics2D = this.NewGraphics2D();
-				// We must call on draw background as this is effectively our child and that is the way it is done in GuiWidget.
-				// Parents call child OnDrawBackground before they call OnDraw
-				AggSystemWindow.OnDrawBackground(graphics2D);
-				AggSystemWindow.OnDraw(graphics2D);
+
+				if (!SingleWindowMode)
+				{
+					// We must call on draw background as this is effectively our child and that is the way it is done in GuiWidget.
+					// Parents call child OnDrawBackground before they call OnDraw
+					AggSystemWindow.OnDrawBackground(graphics2D);
+					AggSystemWindow.OnDraw(graphics2D);
+				}
+				else
+				{
+					for (var i = 0; i < this.WindowProvider.OpenWindows.Count; i++)
+					{
+						graphics2D.FillRectangle(this.WindowProvider.OpenWindows[0].LocalBounds, new Color(Color.Black, 160));
+						this.WindowProvider.OpenWindows[i].OnDraw(graphics2D);
+					}
+				}
 
 				/*
 				var bitmap = new Bitmap((int)SystemWindow.Width, (int)SystemWindow.Height);
@@ -219,13 +232,10 @@ namespace MatterHackers.Agg.UI
 				CopyBackBufferToScreen(paintEventArgs.Graphics);
 			}
 
-			OnPaintCount++;
 			// use this to debug that windows are drawing and updating.
-			//Text = string.Format("Draw {0}, Idle {1}, OnPaint {2}", DrawCount, IdleCount, OnPaintCount);
+			// onPaintCount++;
+			// Text = string.Format("Draw {0}, OnPaint {1}", drawCount, onPaintCount);
 		}
-
-		private int DrawCount = 0;
-		private int OnPaintCount;
 
 		public abstract void CopyBackBufferToScreen(Graphics displayGraphics);
 
@@ -240,9 +250,9 @@ namespace MatterHackers.Agg.UI
 			// focus the first child of the forms window (should be the system window)
 			if (AggSystemWindow != null
 				&& AggSystemWindow.Children.Count > 0
-				&& AggSystemWindow.Children[0] != null)
+				&& AggSystemWindow.Children.FirstOrDefault() != null)
 			{
-				AggSystemWindow.Children[0].Focus();
+				AggSystemWindow.Children.FirstOrDefault().Focus();
 			}
 
 			base.OnActivated(e);
@@ -250,24 +260,28 @@ namespace MatterHackers.Agg.UI
 
 		protected override void OnResize(EventArgs e)
 		{
-			AggSystemWindow.LocalBounds = new RectangleDouble(0, 0, ClientSize.Width, ClientSize.Height);
-
-			// Wait until the control is initialized (and thus WindowState has been set) to ensure we don't wipe out
-			// the persisted data before its loaded
-			if (this.IsInitialized)
+			var systemWindow = AggSystemWindow;
+			if (systemWindow != null)
 			{
-				// Push the current maximized state into the SystemWindow where it can be used or persisted by Agg applications
-				AggSystemWindow.Maximized = this.WindowState == FormWindowState.Maximized;
-			}
+				systemWindow.LocalBounds = new RectangleDouble(0, 0, ClientSize.Width, ClientSize.Height);
 
-			AggSystemWindow.Invalidate();
+				// Wait until the control is initialized (and thus WindowState has been set) to ensure we don't wipe out
+				// the persisted data before its loaded
+				if (this.IsInitialized)
+				{
+					// Push the current maximized state into the SystemWindow where it can be used or persisted by Agg applications
+					systemWindow.Maximized = this.WindowState == FormWindowState.Maximized;
+				}
+
+				systemWindow.Invalidate();
+			}
 
 			base.OnResize(e);
 		}
 
 		protected override void SetVisibleCore(bool value)
 		{
-			// Force Activation/BringToFront behavior when Visibility enabled. This ensures Agg forms 
+			// Force Activation/BringToFront behavior when Visibility enabled. This ensures Agg forms
 			// always come to front after ShowSystemWindow()
 			if (value)
 			{
@@ -305,7 +319,7 @@ namespace MatterHackers.Agg.UI
 					}
 
 					// Close the SystemWindow
-					if (AggSystemWindow != null 
+					if (AggSystemWindow != null
 						&& !AggSystemWindow.HasBeenClosed)
 					{
 						// Store that the Close operation started here
@@ -318,12 +332,14 @@ namespace MatterHackers.Agg.UI
 			base.OnClosing(e);
 		}
 
+		public ISystemWindowProvider WindowProvider { get; set; }
+
 		#region WidgetForWindowsFormsAbstract/WinformsWindowWidget
 		#endregion
 
 		#region IPlatformWindow
 
-		public new Agg.UI.Keys ModifierKeys => (Agg.UI.Keys)Control.ModifierKeys;
+		public new Keys ModifierKeys => (Keys)Control.ModifierKeys;
 
 		/* // Can't simply override BringToFront. Change Interface method name/signature if required. Leaving as is
 		 * // to call base/this.BringToFront via Interface call
@@ -339,23 +355,13 @@ namespace MatterHackers.Agg.UI
 		// TODO: Why is this member named Caption instead of Title?
 		public string Caption
 		{
-			get
-			{
-				return this.Text;
-			}
-			set
-			{
-				this.Text = value;
-			}
+			get => this.Text;
+			set => this.Text = value;
 		}
 
 		public Point2D DesktopPosition
 		{
-			get
-			{
-				return new Point2D(this.DesktopLocation.X, this.DesktopLocation.Y);
-			}
-
+			get => new Point2D(this.DesktopLocation.X, this.DesktopLocation.Y);
 			set
 			{
 				if (!this.Visible)
@@ -423,11 +429,11 @@ namespace MatterHackers.Agg.UI
 			// Ignore problems with buggy WinForms on Linux
 			try
 			{
-				this.Invalidate ();
+				this.Invalidate();
 			}
 			catch (Exception e)
 			{
-				System.Console.WriteLine("WinForms Exception: " + e.Message);
+				Console.WriteLine("WinForms Exception: " + e.Message);
 			}
 		}
 
@@ -641,19 +647,14 @@ namespace MatterHackers.Agg.UI
 		*/
 		#endregion
 
-		public static WinformsSystemWindow MainWindowsFormsWindow { get; private set; }
-
 		public new Vector2 MinimumSize
 		{
-			get
-			{
-				return new Vector2(base.MinimumSize.Width, base.MinimumSize.Height);
-			}
+			get => new Vector2(base.MinimumSize.Width, base.MinimumSize.Height);
 			set
 			{
-				Size clientSize = new Size((int)Math.Ceiling(value.X), (int)Math.Ceiling(value.Y));
+				var clientSize = new Size((int)Math.Ceiling(value.X), (int)Math.Ceiling(value.Y));
 
-				Size windowSize = new Size(
+				var windowSize = new Size(
 					clientSize.Width + this.Width - this.ClientSize.Width,
 					clientSize.Height + this.Height - this.ClientSize.Height);
 
@@ -666,16 +667,11 @@ namespace MatterHackers.Agg.UI
 		public void ShowSystemWindow(SystemWindow systemWindow)
 		{
 			// If ShowSystemWindow is called on loaded/visible SystemWindow, call BringToFront and exit
-			if (systemWindow.PlatformWindow == this)
+			if (systemWindow.PlatformWindow == this
+				&& !SingleWindowMode)
 			{
 				this.BringToFront();
 				return;
-			}
-
-			if (SingleWindowMode)
-			{
-				// Store the active SystemWindow
-				allOpenSystemWindows.Push(systemWindow);
 			}
 
 			// Set the active SystemWindow & PlatformWindow references
@@ -709,27 +705,34 @@ namespace MatterHackers.Agg.UI
 			else if (SingleWindowMode)
 			{
 				// Notify the embedded window of its new single windows parent size
-				// TODO: Hack - figure out how to push this into non-firstWindow items
-				//systemWindow.Size = new Vector2(this.Size.Width, this.Size.Height);
+
+				// If client code has called ShowSystemWindow and we're minimized, we must restore in order
+				// to establish correct window bounds from ClientSize below. Otherwise we're zeroed out and
+				// will create invalid surfaces of (0,0)
+				if (this.WindowState == FormWindowState.Minimized)
+				{
+					this.WindowState = FormWindowState.Normal;
+				}
 
 				systemWindow.Size = new Vector2(
 						this.ClientSize.Width,
 						this.ClientSize.Height);
-				//systemWindow.Position = Vector2.Zero;
 			}
 		}
 
 		public void CloseSystemWindow(SystemWindow systemWindow)
 		{
 			// Prevent our call to SystemWindow.Close from recursing
-			if (this.winformAlreadyClosing)
+			if (winformAlreadyClosing)
 			{
 				return;
 			}
 
-			var rootWindow = allOpenSystemWindows.LastOrDefault();
-			if ((systemWindow == rootWindow && SingleWindowMode)
-				|| (systemWindow == MainWindowsFormsWindow.systemWindow && !SingleWindowMode))
+			// Check for RootSystemWindow, close if found
+			string windowTypeName = systemWindow.GetType().Name;
+
+			if ((SingleWindowMode && windowTypeName == "RootSystemWindow")
+				|| (MainWindowsFormsWindow != null && systemWindow == MainWindowsFormsWindow.systemWindow && !SingleWindowMode))
 			{
 				// Close the main (first) PlatformWindow if it's being requested and not this instance
 				if (MainWindowsFormsWindow.InvokeRequired)
@@ -740,21 +743,18 @@ namespace MatterHackers.Agg.UI
 				{
 					MainWindowsFormsWindow.Close();
 				}
+
 				return;
 			}
 
 			if (SingleWindowMode)
 			{
-				// Remove the closing window
-				allOpenSystemWindows.Pop();
-
-				// Restore the prior window from the stack
-				AggSystemWindow = allOpenSystemWindows.Count <= 0 ? null : allOpenSystemWindows.Peek();
+				AggSystemWindow = this.WindowProvider.TopWindow;
 				AggSystemWindow?.Invalidate();
 			}
 			else
 			{
-				if (!this.IsDisposed && !this.IsDisposed)
+				if (!this.IsDisposed && !this.Disposing)
 				{
 					if (this.InvokeRequired)
 					{
@@ -772,7 +772,5 @@ namespace MatterHackers.Agg.UI
 		{
 			public virtual bool Inspecting { get; set; } = true;
 		}
-
-		public static Func<SystemWindow, FormInspector> InspectorCreator { get; set; }
 	}
 }

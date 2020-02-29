@@ -27,6 +27,7 @@ using MatterHackers.VectorMath;
 using MIConvexHull;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -45,7 +46,6 @@ namespace MatterHackers.PolygonMesh
 				return null;
 			}
 
-			var meshVertices = mesh.Vertices;
 			// build the convex hull for faster bounding calculations
 			// we have a mesh so don't recurse into children
 			object meshData;
@@ -68,12 +68,12 @@ namespace MatterHackers.PolygonMesh
 					{
 						//Task.Run(() =>
 						{
-							CreateHullMesh(mesh, meshVertices);
+							CreateHullMesh(mesh);
 						}//);
 					}
 					else
 					{
-						return CreateHullMesh(mesh, meshVertices);
+						return CreateHullMesh(mesh);
 					}
 				}
 				else if (!generateAsync)
@@ -86,21 +86,32 @@ namespace MatterHackers.PolygonMesh
 						currentlyCreatingHule = creatingHullData is CreatingHullFlag;
 					}
 
-					return CreateHullMesh(mesh, meshVertices);
+					return CreateHullMesh(mesh);
 				}
 			}
 
 			return null;
 		}
 
-		private static Mesh CreateHullMesh(Mesh mesh, VertexCollecton sourceVertices)
+		private static Mesh CreateHullMesh(Mesh mesh)
 		{
+			var bounds = AxisAlignedBoundingBox.Empty();
 			// Get the convex hull for the mesh
 			var cHVertexList = new List<CHVertex>();
-			foreach (var vertex in sourceVertices)
+			foreach (var position in mesh.Vertices.Distinct().ToArray())
 			{
-				cHVertexList.Add(new CHVertex(vertex.Position));
+				cHVertexList.Add(new CHVertex(position));
+				bounds.ExpandToInclude(position);
 			}
+
+			if (cHVertexList.Count == 0
+				|| bounds.XSize == 0
+				|| bounds.YSize == 0
+				|| bounds.ZSize == 0)
+			{
+				return mesh;
+			}
+
 			var convexHull = ConvexHull<CHVertex, CHFace>.Create(cHVertexList, .01);
 			if (convexHull != null)
 			{
@@ -108,13 +119,14 @@ namespace MatterHackers.PolygonMesh
 				Mesh hullMesh = new Mesh();
 				foreach (var face in convexHull.Faces)
 				{
-					List<IVertex> vertices = new List<IVertex>();
+					int vertexCount = hullMesh.Vertices.Count;
+
 					foreach (var vertex in face.Vertices)
 					{
-						var meshVertex = hullMesh.CreateVertex(new Vector3(vertex.Position[0], vertex.Position[1], vertex.Position[2]));
-						vertices.Add(meshVertex);
+						hullMesh.Vertices.Add(new Vector3(vertex.Position[0], vertex.Position[1], vertex.Position[2]));
 					}
-					hullMesh.CreateFace(vertices.ToArray());
+
+					hullMesh.Faces.Add(vertexCount, vertexCount + 1, vertexCount + 2, hullMesh.Vertices);
 				}
 
 				try
@@ -135,6 +147,7 @@ namespace MatterHackers.PolygonMesh
 					{
 						mesh.PropertyBag.Remove(CreatingConvexHullMesh);
 					}
+
 					return hullMesh;
 				}
 				catch
@@ -176,6 +189,11 @@ namespace MatterHackers.PolygonMesh
 			internal CHVertex(Vector3 position)
 			{
 				this.position = position.ToArray();
+			}
+
+			internal CHVertex(Vector3Float position)
+			{
+				this.position = new double[] { position.X, position.Y, position.Z };
 			}
 
 			public double[] Position => position;

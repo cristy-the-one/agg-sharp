@@ -25,6 +25,7 @@ SOFTWARE.
 #endregion --- License ---
 
 using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Newtonsoft.Json;
 
@@ -34,8 +35,18 @@ namespace MatterHackers.VectorMath
 	[JsonObject]
 	[Serializable]
 	[StructLayout(LayoutKind.Sequential)]
-	public struct Vector2 : IEquatable<Vector2> , IConvertible
+	public struct Vector2 : IEquatable<Vector2>
 	{
+		/// <summary>
+		/// Defines an instance with all components set to positive infinity.
+		/// </summary>
+		public static readonly Vector2 PositiveInfinity = new Vector2(double.PositiveInfinity, double.PositiveInfinity);
+
+		/// <summary>
+		/// Defines an instance with all components set to negative infinity.
+		/// </summary>
+		public static readonly Vector2 NegativeInfinity = new Vector2(double.NegativeInfinity, double.NegativeInfinity);
+
 		#region Fields
 
 		/// <summary>The X coordinate of this instance.</summary>
@@ -88,6 +99,12 @@ namespace MatterHackers.VectorMath
 			this.Y = vector.Y;
 		}
 
+		public Vector2(Vector3Float vector)
+		{
+			this.X = vector.X;
+			this.Y = vector.Y;
+		}
+
 		#endregion Constructors
 
 		#region Properties
@@ -132,21 +149,10 @@ namespace MatterHackers.VectorMath
 		// http://stackoverflow.com/questions/8094867/good-gethashcode-override-for-list-of-foo-objects-respecting-the-order
 		/// </summary>
 		/// <returns></returns>
-		public long GetLongHashCode()
+		public ulong GetLongHashCode(ulong hash = 14695981039346656037)
 		{
-			long hash = 19;
-
-			unsafe
-			{
-				fixed (double* pX = &X)
-				{
-					hash = hash * 31 + *(long*)(pX);
-				}
-				fixed (double* pY = &Y)
-				{
-					hash = hash * 31 + *(long*)(pY);
-				}
-			}
+			hash = Vector4.GetLongHashCode(X, hash);
+			hash = Vector4.GetLongHashCode(Y, hash);
 
 			return hash;
 		}
@@ -281,6 +287,17 @@ namespace MatterHackers.VectorMath
 		}
 
 		#endregion public void Normalize()
+
+		public bool IsValid()
+		{
+			if (double.IsNaN(X) || double.IsInfinity(X)
+				|| double.IsNaN(Y) || double.IsInfinity(Y))
+			{
+				return false;
+			}
+
+			return true;
+		}
 
 		#endregion Instance
 
@@ -453,6 +470,27 @@ namespace MatterHackers.VectorMath
 			a.X = a.X < b.X ? a.X : b.X;
 			a.Y = a.Y < b.Y ? a.Y : b.Y;
 			return a;
+		}
+
+		public static Vector2 Parse(string s)
+		{
+			var result = Vector2.Zero;
+			var values = s.Split(',').Select(sValue =>
+			{
+				double number = 0;
+				if (double.TryParse(sValue, out number))
+				{
+					return double.Parse(sValue);
+				}
+				return 0;
+			}).ToArray();
+
+			for (int i = 0; i < Math.Min(2, values.Length); i++)
+			{
+				result[i] = values[i];
+			}
+
+			return result;
 		}
 
 		/// <summary>
@@ -983,93 +1021,5 @@ namespace MatterHackers.VectorMath
 		}
 
 		#endregion IEquatable<Vector2d> Members
-
-		#region IConvertable
-		public TypeCode GetTypeCode()
-		{
-			throw new NotImplementedException();
-		}
-
-		public bool ToBoolean(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public char ToChar(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public sbyte ToSByte(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public byte ToByte(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public short ToInt16(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public ushort ToUInt16(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public int ToInt32(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public uint ToUInt32(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public long ToInt64(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public ulong ToUInt64(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public float ToSingle(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public double ToDouble(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public decimal ToDecimal(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public DateTime ToDateTime(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public string ToString(IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		public object ToType(Type conversionType, IFormatProvider provider)
-		{
-			throw new NotImplementedException();
-		}
-
-		#endregion IConvertable
 	}
 }

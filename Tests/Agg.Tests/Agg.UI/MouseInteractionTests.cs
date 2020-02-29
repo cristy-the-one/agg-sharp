@@ -30,7 +30,6 @@ either expressed or implied, of the FreeBSD Project.
 #if !__ANDROID__
 
 using MatterHackers.GuiAutomation;
-using MatterHackers.VectorMath;
 
 #endif
 

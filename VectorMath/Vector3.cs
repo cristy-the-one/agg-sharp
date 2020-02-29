@@ -24,17 +24,17 @@ SOFTWARE.
 
 #endregion --- License ---
 
-using Newtonsoft.Json;
 using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.Collections;
+using System.Linq;
+using Newtonsoft.Json;
 
 namespace MatterHackers.VectorMath
 {
 	/// <summary>
 	/// Represents a 3D vector using three double-precision floating-point numbers.
 	/// </summary>
+	[JsonObject]
 	[Serializable]
 	[StructLayout(LayoutKind.Sequential)]
 	public struct Vector3 : IEquatable<Vector3>
@@ -97,9 +97,9 @@ namespace MatterHackers.VectorMath
 
 		public Vector3(Vector3Float v)
 		{
-			X = v.x;
-			Y = v.y;
-			Z = v.z;
+			X = v.X;
+			Y = v.Y;
+			Z = v.Z;
 		}
 
 		public Vector3(double[] doubleArray)
@@ -120,7 +120,7 @@ namespace MatterHackers.VectorMath
 			Z = v.Z;
 		}
 
-		
+
 
 		#endregion Constructors
 
@@ -181,7 +181,7 @@ namespace MatterHackers.VectorMath
 		/// </summary>
 		/// <see cref="LengthFast"/>
 		/// <seealso cref="LengthSquared"/>
-		[JsonIgnoreAttribute]
+		[JsonIgnore]
 		public double Length
 		{
 			get
@@ -203,7 +203,7 @@ namespace MatterHackers.VectorMath
 		/// </remarks>
 		/// <see cref="Length"/>
 		/// <seealso cref="LengthFast"/>
-		[JsonIgnoreAttribute]
+		[JsonIgnore]
 		public double LengthSquared
 		{
 			get
@@ -243,6 +243,18 @@ namespace MatterHackers.VectorMath
 		}
 
 		#endregion public void Normalize()
+
+		public bool IsValid()
+		{
+			if (double.IsNaN(X) || double.IsInfinity(X)
+				|| double.IsNaN(Y) || double.IsInfinity(Y)
+				|| double.IsNaN(Z) || double.IsInfinity(Z))
+			{
+				return false;
+			}
+
+			return true;
+		}
 
 		#region public double[] ToArray()
 
@@ -471,6 +483,24 @@ namespace MatterHackers.VectorMath
 			return a;
 		}
 
+		public static Vector3 Parse(string s)
+		{
+			var result = Vector3.Zero;
+
+			var values = s.Split(',').Select(sValue =>
+			{
+				double.TryParse(sValue, out double number);
+				return number;
+			}).ToArray();
+
+			for (int i = 0; i < Math.Min(3, values.Length); i++)
+			{
+				result[i] = values[i];
+			}
+
+			return result;
+		}
+
 		/// <summary>
 		/// Calculate the component-wise minimum of two vectors
 		/// </summary>
@@ -611,63 +641,6 @@ namespace MatterHackers.VectorMath
 
 		#endregion Normalize
 
-		#region Dot
-
-		/// <summary>
-		/// Calculate the dot (scalar) product of two vectors
-		/// </summary>
-		/// <param name="left">First operand</param>
-		/// <param name="right">Second operand</param>
-		/// <returns>The dot product of the two inputs</returns>
-		public static double Dot(Vector3 left, Vector3 right)
-		{
-			return left.X * right.X + left.Y * right.Y + left.Z * right.Z;
-		}
-
-		/// <summary>
-		/// Calculate the dot (scalar) product of two vectors
-		/// </summary>
-		/// <param name="left">First operand</param>
-		/// <param name="right">Second operand</param>
-		/// <param name="result">The dot product of the two inputs</param>
-		public static void Dot(ref Vector3 left, ref Vector3 right, out double result)
-		{
-			result = left.X * right.X + left.Y * right.Y + left.Z * right.Z;
-		}
-
-		#endregion Dot
-
-		#region Cross
-
-		/// <summary>
-		/// Calculate the cross (vector) product of two vectors
-		/// </summary>
-		/// <param name="left">First operand</param>
-		/// <param name="right">Second operand</param>
-		/// <returns>The cross product of the two inputs</returns>
-		public static Vector3 Cross(Vector3 left, Vector3 right)
-		{
-			Vector3 result;
-			Cross(ref left, ref right, out result);
-			return result;
-		}
-
-		/// <summary>
-		/// Calculate the cross (vector) product of two vectors
-		/// </summary>
-		/// <param name="left">First operand</param>
-		/// <param name="right">Second operand</param>
-		/// <returns>The cross product of the two inputs</returns>
-		/// <param name="result">The cross product of the two inputs</param>
-		public static void Cross(ref Vector3 left, ref Vector3 right, out Vector3 result)
-		{
-			result = new Vector3(left.Y * right.Z - left.Z * right.Y,
-				left.Z * right.X - left.X * right.Z,
-				left.X * right.Y - left.Y * right.X);
-		}
-
-		#endregion Cross
-
 		#region Utility
 
 		/// <summary>
@@ -681,26 +654,26 @@ namespace MatterHackers.VectorMath
 		public static bool Collinear(Vector3 a, Vector3 b, Vector3 c, double epsilon = .000001)
 		{
 			// Return true if a, b, and c all lie on the same line.
-			return Math.Abs(Cross(b - a, c - a).Length) < epsilon;
+			return Math.Abs((b - a).Cross(c - a).Length) < epsilon;
 		}
 
 		public static Vector3 GetPerpendicular(Vector3 a, Vector3 b)
 		{
 			if (!Collinear(a, b, Zero))
 			{
-				return Vector3.Cross(a, b);
+				return a.Cross(b);
 			}
 			else
 			{
 				Vector3 zOne = new Vector3(0, 0, 100000);
 				if (!Collinear(a, b, zOne))
 				{
-					return Vector3.Cross(a - zOne, b - zOne);
+					return Vector3Ex.Cross(a - zOne, b - zOne);
 				}
 				else
 				{
 					Vector3 xOne = new Vector3(1000000, 0, 0);
-					return Vector3.Cross(a - xOne, b - xOne);
+					return Vector3Ex.Cross(a - xOne, b - xOne);
 				}
 			}
 		}
@@ -718,11 +691,11 @@ namespace MatterHackers.VectorMath
 		/// <returns>a when blend=0, b when blend=1, and a linear combination otherwise</returns>
 		public static Vector3 Lerp(Vector3 a, Vector3 b, double blend)
 		{
-			if(blend == 0)
+			if (blend == 0)
 			{
 				return a;
 			}
-			if(blend == 1)
+			if (blend == 1)
 			{
 				return b;
 			}
@@ -788,253 +761,6 @@ namespace MatterHackers.VectorMath
 
 		#endregion Barycentric
 
-		#region Transform
-
-		/// <summary>Transform a direction vector by the given Matrix
-		/// Assumes the matrix has a bottom row of (0,0,0,1), that is the translation part is ignored.
-		/// </summary>
-		/// <param name="vec">The vector to transform</param>
-		/// <param name="mat">The desired transformation</param>
-		/// <returns>The transformed vector</returns>
-		public static Vector3 TransformVector(Vector3 vec, Matrix4X4 mat)
-		{
-			return new Vector3(
-				Vector3.Dot(vec, new Vector3(mat.Column0)),
-				Vector3.Dot(vec, new Vector3(mat.Column1)),
-				Vector3.Dot(vec, new Vector3(mat.Column2)));
-		}
-
-		/// <summary>Transform a direction vector by the given Matrix
-		/// Assumes the matrix has a bottom row of (0,0,0,1), that is the translation part is ignored.
-		/// </summary>
-		/// <param name="vec">The vector to transform</param>
-		/// <param name="mat">The desired transformation</param>
-		/// <param name="result">The transformed vector</param>
-		public static void TransformVector(ref Vector3 vec, ref Matrix4X4 mat, out Vector3 result)
-		{
-			result.X = vec.X * mat.Row0.X +
-					   vec.Y * mat.Row1.X +
-					   vec.Z * mat.Row2.X;
-
-			result.Y = vec.X * mat.Row0.Y +
-					   vec.Y * mat.Row1.Y +
-					   vec.Z * mat.Row2.Y;
-
-			result.Z = vec.X * mat.Row0.Z +
-					   vec.Y * mat.Row1.Z +
-					   vec.Z * mat.Row2.Z;
-		}
-
-		/// This calculates the inverse of the given matrix, use TransformNormalInverse if you
-		/// already have the inverse to avoid this extra calculation
-		/// <param name="normal">The normal to transform</param>
-		/// <param name="mat">The desired transformation</param>
-		/// <returns>The transformed normal</returns>
-		public static Vector3 TransformNormal(Vector3 normal, Matrix4X4 mat)
-		{
-			Vector3 result;
-			TransformNormal(ref normal, ref mat, out result);
-			return result;
-		}
-
-		/// <summary>Transform a Normal by the given Matrix</summary>
-		/// <remarks>
-		/// This calculates the inverse of the given matrix, use TransformNormal if you have 
-		/// a point on the plane (fastest) or TransformNormalInverse if you
-		/// have the inverse but not a point on the plane - to avoid this extra calculation
-		/// </remarks>
-		/// <param name="normal">The normal to transform</param>
-		/// <param name="mat">The desired transformation</param>
-		/// <param name="result">The transformed normal</param>
-		public static void TransformNormal(ref Vector3 normal, ref Matrix4X4 mat, out Vector3 result)
-		{
-			Matrix4X4 Inverse = Matrix4X4.Invert(mat);
-			Vector3.TransformNormalInverse(ref normal, ref Inverse, out result);
-		}
-
-		/// <summary>Transform a Normal by the (transpose of the) given Matrix</summary>
-		/// <remarks>
-		/// This version doesn't calculate the inverse matrix.
-		/// Use this version if you already have the inverse of the desired transform to hand
-		/// </remarks>
-		/// <param name="normal">The normal to transform</param>
-		/// <param name="invMat">The inverse of the desired transformation</param>
-		/// <returns>The transformed normal</returns>
-		public static Vector3 TransformNormalInverse(Vector3 normal, Matrix4X4 invMat)
-		{
-			return new Vector3(
-				Vector3.Dot(normal, new Vector3(invMat.Row0)),
-				Vector3.Dot(normal, new Vector3(invMat.Row1)),
-				Vector3.Dot(normal, new Vector3(invMat.Row2)));
-		}
-
-		/// <summary>Transform a Normal by the (transpose of the) given Matrix</summary>
-		/// <remarks>
-		/// This version doesn't calculate the inverse matrix.
-		/// Use this version if you already have the inverse of the desired transform to hand
-		/// </remarks>
-		/// <param name="normal">The normal to transform</param>
-		/// <param name="invMat">The inverse of the desired transformation</param>
-		/// <param name="result">The transformed normal</param>
-		public static void TransformNormalInverse(ref Vector3 normal, ref Matrix4X4 invMat, out Vector3 result)
-		{
-			result.X = normal.X * invMat.Row0.X +
-					   normal.Y * invMat.Row0.Y +
-					   normal.Z * invMat.Row0.Z;
-
-			result.Y = normal.X * invMat.Row1.X +
-					   normal.Y * invMat.Row1.Y +
-					   normal.Z * invMat.Row1.Z;
-
-			result.Z = normal.X * invMat.Row2.X +
-					   normal.Y * invMat.Row2.Y +
-					   normal.Z * invMat.Row2.Z;
-		}
-
-		/// <summary>Transform a Position by the given Matrix</summary>
-		/// <param name="pos">The position to transform</param>
-		/// <param name="mat">The desired transformation</param>
-		/// <returns>The transformed position</returns>
-		public static Vector3 TransformPosition(Vector3 pos, Matrix4X4 mat)
-		{
-			return new Vector3(
-				Vector3.Dot(pos, new Vector3(mat.Column0)) + mat.Row3.X,
-				Vector3.Dot(pos, new Vector3(mat.Column1)) + mat.Row3.Y,
-				Vector3.Dot(pos, new Vector3(mat.Column2)) + mat.Row3.Z);
-		}
-
-		/// <summary>Transform a Position by the given Matrix</summary>
-		/// <param name="pos">The position to transform</param>
-		/// <param name="mat">The desired transformation</param>
-		/// <param name="result">The transformed position</param>
-		public static void TransformPosition(ref Vector3 pos, ref Matrix4X4 mat, out Vector3 result)
-		{
-			result.X = pos.X * mat.Row0.X +
-					   pos.Y * mat.Row1.X +
-					   pos.Z * mat.Row2.X +
-					   mat.Row3.X;
-
-			result.Y = pos.X * mat.Row0.Y +
-					   pos.Y * mat.Row1.Y +
-					   pos.Z * mat.Row2.Y +
-					   mat.Row3.Y;
-
-			result.Z = pos.X * mat.Row0.Z +
-					   pos.Y * mat.Row1.Z +
-					   pos.Z * mat.Row2.Z +
-					   mat.Row3.Z;
-		}
-
-		/// <summary>
-		/// Transform all the vectors in the array by the given Matrix.
-		/// </summary>
-		/// <param name="boundsVerts"></param>
-		/// <param name="rotationQuaternion"></param>
-		public static void Transform(Vector3[] vecArray, Matrix4X4 mat)
-		{
-			for (int i = 0; i < vecArray.Length; i++)
-			{
-				vecArray[i] = Transform(vecArray[i], mat);
-			}
-		}
-
-		/// <summary>Transform a Vector by the given Matrix</summary>
-		/// <param name="vec">The vector to transform</param>
-		/// <param name="mat">The desired transformation</param>
-		/// <returns>The transformed vector</returns>
-		public static Vector3 Transform(Vector3 vec, Matrix4X4 mat)
-		{
-			return new Vector3(
-				vec.X * mat.Row0.X + vec.Y * mat.Row1.X + vec.Z * mat.Row2.X + mat.Row3.X,
-				vec.X * mat.Row0.Y + vec.Y * mat.Row1.Y + vec.Z * mat.Row2.Y + mat.Row3.Y,
-				vec.X * mat.Row0.Z + vec.Y * mat.Row1.Z + vec.Z * mat.Row2.Z + mat.Row3.Z);
-		}
-
-		/// <summary>Transform a Vector by the given Matrix</summary>
-		/// <param name="vec">The vector to transform</param>
-		/// <param name="mat">The desired transformation</param>
-		/// <param name="result">The transformed vector</param>
-		public static void Transform(ref Vector3 vec, ref Matrix4X4 mat, out Vector3 result)
-		{
-			result = new Vector3(
-				vec.X * mat.Row0.X + vec.Y * mat.Row1.X + vec.Z * mat.Row2.X + mat.Row3.X,
-				vec.X * mat.Row0.Y + vec.Y * mat.Row1.Y + vec.Z * mat.Row2.Y + mat.Row3.Y,
-				vec.X * mat.Row0.Z + vec.Y * mat.Row1.Z + vec.Z * mat.Row2.Z + mat.Row3.Z);
-		}
-
-		/// <summary>
-		/// Transforms a vector by a quaternion rotation.
-		/// </summary>
-		/// <param name="vec">The vector to transform.</param>
-		/// <param name="quat">The quaternion to rotate the vector by.</param>
-		/// <returns>The result of the operation.</returns>
-		public static Vector3 Transform(Vector3 vec, Quaternion quat)
-		{
-			Vector3 result;
-			Transform(ref vec, ref quat, out result);
-			return result;
-		}
-
-		/// <summary>
-		/// Transforms a vector by a quaternion rotation.
-		/// </summary>
-		/// <param name="vec">The vector to transform.</param>
-		/// <param name="quat">The quaternion to rotate the vector by.</param>
-		/// <param name="result">The result of the operation.</param>
-		public static void Transform(ref Vector3 vec, ref Quaternion quat, out Vector3 result)
-		{
-			// Since vec.W == 0, we can optimize quat * vec * quat^-1 as follows:
-			// vec + 2.0 * cross(quat.xyz, cross(quat.xyz, vec) + quat.w * vec)
-			Vector3 xyz = quat.Xyz, temp, temp2;
-			Vector3.Cross(ref xyz, ref vec, out temp);
-			Vector3.Multiply(ref vec, quat.W, out temp2);
-			Vector3.Add(ref temp, ref temp2, out temp);
-			Vector3.Cross(ref xyz, ref temp, out temp);
-			Vector3.Multiply(ref temp, 2, out temp);
-			Vector3.Add(ref vec, ref temp, out result);
-		}
-
-		/// <summary>
-		/// Transform all the vectors in the array by the quaternion rotation.
-		/// </summary>
-		/// <param name="boundsVerts"></param>
-		/// <param name="rotationQuaternion"></param>
-		public static void Transform(Vector3[] vecArray, Quaternion rotationQuaternion)
-		{
-			for (int i = 0; i < vecArray.Length; i++)
-			{
-				vecArray[i] = Transform(vecArray[i], rotationQuaternion);
-			}
-		}
-
-		/// <summary>
-		/// Transform a Vector3d by the given Matrix, and project the resulting Vector4 back to a Vector3
-		/// </summary>
-		/// <param name="vec">The vector to transform</param>
-		/// <param name="mat">The desired transformation</param>
-		/// <returns>The transformed vector</returns>
-		public static Vector3 TransformPerspective(Vector3 vec, Matrix4X4 mat)
-		{
-			Vector3 result;
-			TransformPerspective(ref vec, ref mat, out result);
-			return result;
-		}
-
-		/// <summary>Transform a Vector3d by the given Matrix, and project the resulting Vector4d back to a Vector3d</summary>
-		/// <param name="vec">The vector to transform</param>
-		/// <param name="mat">The desired transformation</param>
-		/// <param name="result">The transformed vector</param>
-		public static void TransformPerspective(ref Vector3 vec, ref Matrix4X4 mat, out Vector3 result)
-		{
-			Vector4 v = new Vector4(vec);
-			Vector4.Transform(ref v, ref mat, out v);
-			result.X = v.X / v.W;
-			result.Y = v.Y / v.W;
-			result.Z = v.Z / v.W;
-		}
-
-		#endregion Transform
-
 		#region CalculateAngle
 
 		/// <summary>
@@ -1046,7 +772,7 @@ namespace MatterHackers.VectorMath
 		/// <remarks>Note that the returned angle is never bigger than the constant Pi.</remarks>
 		public static double CalculateAngle(Vector3 first, Vector3 second)
 		{
-			return System.Math.Acos((Vector3.Dot(first, second)) / (first.Length * second.Length));
+			return System.Math.Acos((first.Dot(second)) / (first.Length * second.Length));
 		}
 
 		/// <summary>Calculates the angle (in radians) between two vectors.</summary>
@@ -1057,7 +783,7 @@ namespace MatterHackers.VectorMath
 		public static void CalculateAngle(ref Vector3 first, ref Vector3 second, out double result)
 		{
 			double temp;
-			Vector3.Dot(ref first, ref second, out temp);
+			first.Dot(ref second, out temp);
 			result = System.Math.Acos(temp / (first.Length * second.Length));
 		}
 
@@ -1070,7 +796,7 @@ namespace MatterHackers.VectorMath
 		/// <summary>
 		/// Gets or sets an OpenTK.Vector2d with the X and Y components of this instance.
 		/// </summary>
-		[JsonIgnoreAttribute]
+		[JsonIgnore]
 		public Vector2 Xy { get { return new Vector2(X, Y); } set { X = value.X; Y = value.Y; } }
 
 		#endregion Swizzle
@@ -1109,7 +835,7 @@ namespace MatterHackers.VectorMath
 		/// Negates an instance.
 		/// </summary>
 		/// <param name="vec">The instance.</param>
-		/// <returns>The result of the calculation.</returns> 
+		/// <returns>The result of the calculation.</returns>
 		public static Vector3 operator -(Vector3 vec)
 		{
 			vec.X = -vec.X;
@@ -1220,7 +946,7 @@ namespace MatterHackers.VectorMath
 		/// <returns></returns>
 		public override string ToString()
 		{
-			return String.Format("[{0}, {1}, {2}]", X, Y, Z);
+			return String.Format($"[{X:0.####}, {Y:0.####}, {Z:0.####}]");
 		}
 
 		#endregion public override string ToString()
@@ -1241,13 +967,11 @@ namespace MatterHackers.VectorMath
 		// http://stackoverflow.com/questions/8094867/good-gethashcode-override-for-list-of-foo-objects-respecting-the-order
 		/// </summary>
 		/// <returns></returns>
-		public long GetLongHashCode()
+		public ulong GetLongHashCode(ulong hash = 14695981039346656037)
 		{
-			long hash = 19;
-
-			hash = hash * 31 + X.GetHashCode();
-			hash = hash * 31 + Y.GetHashCode();
-			hash = hash * 31 + Z.GetHashCode();
+			hash = Vector4.GetLongHashCode(X, hash);
+			hash = Vector4.GetLongHashCode(Y, hash);
+			hash = Vector4.GetLongHashCode(Z, hash);
 
 			return hash;
 		}
@@ -1308,6 +1032,94 @@ namespace MatterHackers.VectorMath
 
 		#endregion IEquatable<Vector3> Members
 
+		#region IConvertable
+		public TypeCode GetTypeCode()
+		{
+			throw new NotImplementedException();
+		}
+
+		public bool ToBoolean(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public char ToChar(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public sbyte ToSByte(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public byte ToByte(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public short ToInt16(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public ushort ToUInt16(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public int ToInt32(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public uint ToUInt32(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public long ToInt64(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public ulong ToUInt64(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public float ToSingle(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public double ToDouble(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public decimal ToDecimal(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public DateTime ToDateTime(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public string ToString(IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		public object ToType(Type conversionType, IFormatProvider provider)
+		{
+			throw new NotImplementedException();
+		}
+
+		#endregion IConvertable
+
 		public static double ComponentMax(Vector3 vector3)
 		{
 			return Math.Max(vector3.X, Math.Max(vector3.Y, vector3.Z));
@@ -1317,5 +1129,312 @@ namespace MatterHackers.VectorMath
 		{
 			return Math.Min(vector3.X, Math.Min(vector3.Y, vector3.Z));
 		}
+	}
+
+	public static class Vector3Ex
+	{
+		#region Dot
+
+		/// <summary>
+		/// Calculate the dot (scalar) product of two vectors
+		/// </summary>
+		/// <param name="left">First operand</param>
+		/// <param name="right">Second operand</param>
+		/// <returns>The dot product of the two inputs</returns>
+		public static double Dot(this Vector3 left, Vector3 right)
+		{
+			return left.X * right.X + left.Y * right.Y + left.Z * right.Z;
+		}
+
+		/// <summary>
+		/// Calculate the dot (scalar) product of two vectors
+		/// </summary>
+		/// <param name="left">First operand</param>
+		/// <param name="right">Second operand</param>
+		/// <param name="result">The dot product of the two inputs</param>
+		public static void Dot(this Vector3 left, ref Vector3 right, out double result)
+		{
+			result = left.X * right.X + left.Y * right.Y + left.Z * right.Z;
+		}
+
+		#endregion Dot
+
+		#region Cross
+
+		/// <summary>
+		/// Calculate the cross (vector) product of two vectors
+		/// </summary>
+		/// <param name="left">First operand</param>
+		/// <param name="right">Second operand</param>
+		/// <returns>The cross product of the two inputs</returns>
+		public static Vector3 Cross(this Vector3 left, Vector3 right)
+		{
+			Vector3 result;
+			left.Cross(ref right, out result);
+			return result;
+		}
+
+		/// <summary>
+		/// Calculate the cross (vector) product of two vectors
+		/// </summary>
+		/// <param name="left">First operand</param>
+		/// <param name="right">Second operand</param>
+		/// <returns>The cross product of the two inputs</returns>
+		/// <param name="result">The cross product of the two inputs</param>
+		public static void Cross(this Vector3 left, ref Vector3 right, out Vector3 result)
+		{
+			result = new Vector3(left.Y * right.Z - left.Z * right.Y,
+				left.Z * right.X - left.X * right.Z,
+				left.X * right.Y - left.Y * right.X);
+		}
+
+		#endregion Cross
+
+		#region Transform
+
+		/// <summary>Transform a direction vector by the given Matrix
+		/// Assumes the matrix has a bottom row of (0,0,0,1), that is the translation part is ignored.
+		/// </summary>
+		/// <param name="vec">The vector to transform</param>
+		/// <param name="mat">The desired transformation</param>
+		/// <returns>The transformed vector</returns>
+		public static Vector3 TransformVector(this Vector3 vec, Matrix4X4 mat)
+		{
+			return new Vector3(
+				vec.Dot(new Vector3(mat.Column0)),
+				vec.Dot(new Vector3(mat.Column1)),
+				vec.Dot(new Vector3(mat.Column2)));
+		}
+
+		/// <summary>Transform a direction vector by the given Matrix
+		/// Assumes the matrix has a bottom row of (0,0,0,1), that is the translation part is ignored.
+		/// </summary>
+		/// <param name="vec">The vector to transform</param>
+		/// <param name="mat">The desired transformation</param>
+		/// <param name="result">The transformed vector</param>
+		public static void TransformVector(this Vector3 vec, ref Matrix4X4 mat, out Vector3 result)
+		{
+			result.X = vec.X * mat.Row0.X +
+					   vec.Y * mat.Row1.X +
+					   vec.Z * mat.Row2.X;
+
+			result.Y = vec.X * mat.Row0.Y +
+					   vec.Y * mat.Row1.Y +
+					   vec.Z * mat.Row2.Y;
+
+			result.Z = vec.X * mat.Row0.Z +
+					   vec.Y * mat.Row1.Z +
+					   vec.Z * mat.Row2.Z;
+		}
+
+		/// This calculates the inverse of the given matrix, use TransformNormalInverse if you
+		/// already have the inverse to avoid this extra calculation
+		/// <param name="normal">The normal to transform</param>
+		/// <param name="mat">The desired transformation</param>
+		/// <returns>The transformed normal</returns>
+		public static Vector3 TransformNormal(this Vector3 normal, Matrix4X4 mat)
+		{
+			Vector3 result;
+			TransformNormal(normal, ref mat, out result);
+			return result;
+		}
+
+		/// <summary>Transform a Normal by the given Matrix</summary>
+		/// <remarks>
+		/// This calculates the inverse of the given matrix, use TransformNormal if you have
+		/// a point on the plane (fastest) or TransformNormalInverse if you
+		/// have the inverse but not a point on the plane - to avoid this extra calculation
+		/// </remarks>
+		/// <param name="normal">The normal to transform</param>
+		/// <param name="mat">The desired transformation</param>
+		/// <param name="result">The transformed normal</param>
+		public static void TransformNormal(this Vector3 normal, ref Matrix4X4 mat, out Vector3 result)
+		{
+			Matrix4X4 Inverse = Matrix4X4.Invert(mat);
+			TransformNormalInverse(normal, ref Inverse, out result);
+		}
+
+		/// <summary>Transform a Normal by the (transpose of the) given Matrix</summary>
+		/// <remarks>
+		/// This version doesn't calculate the inverse matrix.
+		/// Use this version if you already have the inverse of the desired transform to hand
+		/// </remarks>
+		/// <param name="normal">The normal to transform</param>
+		/// <param name="invMat">The inverse of the desired transformation</param>
+		/// <returns>The transformed normal</returns>
+		public static Vector3 TransformNormalInverse(this Vector3 normal, Matrix4X4 invMat)
+		{
+			return new Vector3(
+				normal.Dot(new Vector3(invMat.Row0)),
+				normal.Dot(new Vector3(invMat.Row1)),
+				normal.Dot(new Vector3(invMat.Row2)));
+		}
+
+		/// <summary>Transform a Normal by the (transpose of the) given Matrix</summary>
+		/// <remarks>
+		/// This version doesn't calculate the inverse matrix.
+		/// Use this version if you already have the inverse of the desired transform to hand
+		/// </remarks>
+		/// <param name="normal">The normal to transform</param>
+		/// <param name="invMat">The inverse of the desired transformation</param>
+		/// <param name="result">The transformed normal</param>
+		public static void TransformNormalInverse(this Vector3 normal, ref Matrix4X4 invMat, out Vector3 result)
+		{
+			result.X = normal.X * invMat.Row0.X +
+					   normal.Y * invMat.Row0.Y +
+					   normal.Z * invMat.Row0.Z;
+
+			result.Y = normal.X * invMat.Row1.X +
+					   normal.Y * invMat.Row1.Y +
+					   normal.Z * invMat.Row1.Z;
+
+			result.Z = normal.X * invMat.Row2.X +
+					   normal.Y * invMat.Row2.Y +
+					   normal.Z * invMat.Row2.Z;
+		}
+
+		/// <summary>Transform a Position by the given Matrix</summary>
+		/// <param name="pos">The position to transform</param>
+		/// <param name="mat">The desired transformation</param>
+		/// <returns>The transformed position</returns>
+		public static Vector3 TransformPosition(this Vector3 pos, Matrix4X4 mat)
+		{
+			return new Vector3(
+				pos.Dot(new Vector3(mat.Column0)) + mat.Row3.X,
+				pos.Dot(new Vector3(mat.Column1)) + mat.Row3.Y,
+				pos.Dot(new Vector3(mat.Column2)) + mat.Row3.Z);
+		}
+
+		/// <summary>Transform a Position by the given Matrix</summary>
+		/// <param name="pos">The position to transform</param>
+		/// <param name="mat">The desired transformation</param>
+		/// <param name="result">The transformed position</param>
+		public static void TransformPosition(this Vector3 pos, ref Matrix4X4 mat, out Vector3 result)
+		{
+			result.X = pos.X * mat.Row0.X +
+					   pos.Y * mat.Row1.X +
+					   pos.Z * mat.Row2.X +
+					   mat.Row3.X;
+
+			result.Y = pos.X * mat.Row0.Y +
+					   pos.Y * mat.Row1.Y +
+					   pos.Z * mat.Row2.Y +
+					   mat.Row3.Y;
+
+			result.Z = pos.X * mat.Row0.Z +
+					   pos.Y * mat.Row1.Z +
+					   pos.Z * mat.Row2.Z +
+					   mat.Row3.Z;
+		}
+
+		/// <summary>
+		/// Transform all the vectors in the array by the given Matrix.
+		/// </summary>
+		/// <param name="boundsVerts"></param>
+		/// <param name="rotationQuaternion"></param>
+		public static void Transform(this Vector3[] vecArray, Matrix4X4 mat)
+		{
+			for (int i = 0; i < vecArray.Length; i++)
+			{
+				vecArray[i] = Transform(vecArray[i], mat);
+			}
+		}
+
+		/// <summary>Transform a Vector by the given Matrix</summary>
+		/// <param name="vec">The vector to transform</param>
+		/// <param name="mat">The desired transformation</param>
+		/// <returns>The transformed vector</returns>
+		public static Vector3 Transform(this Vector3 vec, Matrix4X4 mat)
+		{
+			return new Vector3(
+				vec.X * mat.Row0.X + vec.Y * mat.Row1.X + vec.Z * mat.Row2.X + mat.Row3.X,
+				vec.X * mat.Row0.Y + vec.Y * mat.Row1.Y + vec.Z * mat.Row2.Y + mat.Row3.Y,
+				vec.X * mat.Row0.Z + vec.Y * mat.Row1.Z + vec.Z * mat.Row2.Z + mat.Row3.Z);
+		}
+
+		/// <summary>Transform a Vector by the given Matrix</summary>
+		/// <param name="vec">The vector to transform</param>
+		/// <param name="mat">The desired transformation</param>
+		/// <param name="result">The transformed vector</param>
+		public static void Transform(this Vector3 vec, ref Matrix4X4 mat, out Vector3 result)
+		{
+			result = new Vector3(
+				vec.X * mat.Row0.X + vec.Y * mat.Row1.X + vec.Z * mat.Row2.X + mat.Row3.X,
+				vec.X * mat.Row0.Y + vec.Y * mat.Row1.Y + vec.Z * mat.Row2.Y + mat.Row3.Y,
+				vec.X * mat.Row0.Z + vec.Y * mat.Row1.Z + vec.Z * mat.Row2.Z + mat.Row3.Z);
+		}
+
+		/// <summary>
+		/// Transforms a vector by a quaternion rotation.
+		/// </summary>
+		/// <param name="vec">The vector to transform.</param>
+		/// <param name="quat">The quaternion to rotate the vector by.</param>
+		/// <returns>The result of the operation.</returns>
+		public static Vector3 Transform(this Vector3 vec, Quaternion quat)
+		{
+			Vector3 result;
+			Transform(vec, ref quat, out result);
+			return result;
+		}
+
+		/// <summary>
+		/// Transforms a vector by a quaternion rotation.
+		/// </summary>
+		/// <param name="vec">The vector to transform.</param>
+		/// <param name="quat">The quaternion to rotate the vector by.</param>
+		/// <param name="result">The result of the operation.</param>
+		public static void Transform(this Vector3 vec, ref Quaternion quat, out Vector3 result)
+		{
+			// Since vec.W == 0, we can optimize quat * vec * quat^-1 as follows:
+			// vec + 2.0 * cross(quat.xyz, cross(quat.xyz, vec) + quat.w * vec)
+			Vector3 xyz = quat.Xyz, temp, temp2;
+			xyz.Cross(ref vec, out temp);
+			Vector3.Multiply(ref vec, quat.W, out temp2);
+			Vector3.Add(ref temp, ref temp2, out temp);
+			xyz.Cross(ref temp, out temp);
+			Vector3.Multiply(ref temp, 2, out temp);
+			Vector3.Add(ref vec, ref temp, out result);
+		}
+
+		/// <summary>
+		/// Transform all the vectors in the array by the quaternion rotation.
+		/// </summary>
+		/// <param name="boundsVerts"></param>
+		/// <param name="rotationQuaternion"></param>
+		public static void Transform(this Vector3[] vecArray, Quaternion rotationQuaternion)
+		{
+			for (int i = 0; i < vecArray.Length; i++)
+			{
+				vecArray[i] = Transform(vecArray[i], rotationQuaternion);
+			}
+		}
+
+		/// <summary>
+		/// Transform a Vector3d by the given Matrix, and project the resulting Vector4 back to a Vector3
+		/// </summary>
+		/// <param name="vec">The vector to transform</param>
+		/// <param name="mat">The desired transformation</param>
+		/// <returns>The transformed vector</returns>
+		public static Vector3 TransformPerspective(this Vector3 vec, Matrix4X4 mat)
+		{
+			Vector3 result;
+			TransformPerspective(vec, ref mat, out result);
+			return result;
+		}
+
+		/// <summary>Transform a Vector3d by the given Matrix, and project the resulting Vector4d back to a Vector3d</summary>
+		/// <param name="vec">The vector to transform</param>
+		/// <param name="mat">The desired transformation</param>
+		/// <param name="result">The transformed vector</param>
+		public static void TransformPerspective(this Vector3 vec, ref Matrix4X4 mat, out Vector3 result)
+		{
+			Vector4 v = new Vector4(vec);
+			Vector4.Transform(v, ref mat, out v);
+			result.X = v.X / v.W;
+			result.Y = v.Y / v.W;
+			result.Z = v.Z / v.W;
+		}
+
+		#endregion Transform
 	}
 }

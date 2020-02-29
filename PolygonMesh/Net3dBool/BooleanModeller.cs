@@ -165,10 +165,10 @@ namespace Net3dBool
 			GroupObjectComponents(object2, vertices, indices, faceStatus3, faceStatus3);
 
 			//turn the arrayLists to arrays
-			Vector3[] verticesArray = new Vector3[vertices.Count];
+			var verticesArray = new Vector3Float[vertices.Count];
 			for (int i = 0; i < vertices.Count; i++)
 			{
-				verticesArray[i] = vertices[i].Position;
+				verticesArray[i] = new Vector3Float(vertices[i].Position);
 			}
 			int[] indicesArray = new int[indices.Count];
 			for (int i = 0; i < indices.Count; i++)
@@ -193,7 +193,8 @@ namespace Net3dBool
 		{
 			var vertexIndexByHashCode = new Dictionary<Vector3, int>();
 			//for each face..
-			foreach (CsgFace face in obj.Faces.All())
+			obj.Faces.All();
+			foreach (CsgFace face in obj.Faces.QueryResults)
 			{
 				//if the face status fits with the desired status...
 				if (face.Status == faceStatus1 || face.Status == faceStatus2)
@@ -232,10 +233,10 @@ namespace Net3dBool
 
 				//classify faces as being inside or outside the other solid
 				reporter?.Invoke("Classify Faces 1", 0.8);
-				object1.ClassifyFaces(object2, Object1ClassifyFace);
+				object1.ClassifyFaces(object2, cancellationToken, Object1ClassifyFace);
 
 				reporter?.Invoke("Classify Faces 2", 0.9);
-				object2.ClassifyFaces(object1, Object2ClassifyFace);
+				object2.ClassifyFaces(object1, cancellationToken, Object2ClassifyFace);
 			}
 		}
 	}

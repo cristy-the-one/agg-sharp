@@ -33,22 +33,22 @@ using System.Diagnostics;
 
 namespace MatterHackers.Agg.UI
 {
-	public class ToolTipManager
+	public class ToolTipManager : IDisposable
 	{
 		/// <summary>
 		/// Gets or sets the period of time the ToolTip remains visible if the pointer is stationary on a control with specified ToolTip text.
 		/// </summary>
-		public double AutoPopDelay = 5;
+		public const double AutoPopDelay = 5;
 
 		/// <summary>
 		/// Gets or sets the time that passes before the ToolTip appears.
 		/// </summary>
-		public double InitialDelay = 1;
+		public const double InitialDelay = .6;
 
 		/// <summary>
 		/// Gets or sets the length of time that must transpire before subsequent ToolTip windows appear as the pointer moves from one control to another.
 		/// </summary>
-		public double ReshowDelay = .2;
+		public const double ReshowDelay = .2;
 
 		private static int count = 0;
 		private double CurrentAutoPopDelay = 5;
@@ -66,27 +66,30 @@ namespace MatterHackers.Agg.UI
 		private GuiWidget toolTipWidget;
 
 		private GuiWidget widgetThatIsShowingToolTip;
-
 		private GuiWidget widgetThatWantsToShowToolTip;
+		private GuiWidget widgetThatWasShowingToolTip;
+		private RunningInterval runningInterval;
 
 		internal ToolTipManager(SystemWindow owner)
 		{
 			this.systemWindow = owner;
-			systemWindow.MouseMove += (sender, e) =>
-			{
-				mousePosition = e.Position;
-				timeSinceLastMouseMove.Restart();
-			};
 
-			// Get the an idle loop up and running
-			UiThread.SetInterval(CheckIfNeedToDisplayToolTip, .05);
+			// Register listeners
+			systemWindow.MouseMove += this.SystemWindow_MouseMove;
+			runningInterval = UiThread.SetInterval(CheckIfNeedToDisplayToolTip, .05);
+		}
+
+		private void SystemWindow_MouseMove(object sender, MouseEventArgs e)
+		{
+			mousePosition = e.Position;
+			timeSinceLastMouseMove.Restart();
 		}
 
 		public event EventHandler ToolTipPop;
 
 		public event EventHandler<StringEventArgs> ToolTipShown;
 
-		public string CurrentText { get { return toolTipText; } }
+		public string CurrentText => toolTipText;
 
 		public static bool AllowToolTips { get; set; } = true;
 
@@ -131,12 +134,22 @@ namespace MatterHackers.Agg.UI
 				}
 			}
 
+			if(widgetThatWasShowingToolTip != null)
+			{
+				RectangleDouble screenBounds = widgetThatWasShowingToolTip.TransformToScreenSpace(widgetThatWasShowingToolTip.LocalBounds);
+				if (!screenBounds.Contains(mousePosition))
+				{
+					widgetThatWasShowingToolTip = null;
+				}
+			}
+
 			if (!didShow)
 			{
 				bool didRemove = false;
 				if (timeCurrentToolTipHasBeenShowing.Elapsed.TotalSeconds > CurrentAutoPopDelay)
 				{
 					RemoveToolTip();
+					widgetThatWasShowingToolTip = widgetThatIsShowingToolTip;
 					widgetThatIsShowingToolTip = null;
 					timeCurrentToolTipHasBeenShowing.Stop();
 					timeCurrentToolTipHasBeenShowing.Reset();
@@ -183,7 +196,8 @@ namespace MatterHackers.Agg.UI
 		private void DoShowToolTip()
 		{
 			if (widgetThatWantsToShowToolTip != null
-				&& widgetThatWantsToShowToolTip != widgetThatIsShowingToolTip)
+				&& widgetThatWantsToShowToolTip != widgetThatIsShowingToolTip
+				&& widgetThatWasShowingToolTip != widgetThatWantsToShowToolTip)
 			{
 				RectangleDouble screenBoundsShowingTT = widgetThatWantsToShowToolTip.TransformToScreenSpace(widgetThatWantsToShowToolTip.LocalBounds);
 				if (screenBoundsShowingTT.Contains(mousePosition))
@@ -222,8 +236,8 @@ namespace MatterHackers.Agg.UI
 
 					ToolTipShown?.Invoke(this, new StringEventArgs(CurrentText));
 
-					//timeCurrentToolTipHasBeenShowing.Reset();
-					//timeCurrentToolTipHasBeenShowingWasRunning = true;
+					// timeCurrentToolTipHasBeenShowing.Reset();
+					// timeCurrentToolTipHasBeenShowingWasRunning = true;
 					timeCurrentToolTipHasBeenShowing.Restart();
 
 					RectangleDouble toolTipBounds = toolTipWidget.LocalBounds;
@@ -248,8 +262,18 @@ namespace MatterHackers.Agg.UI
 
 					widgetThatIsShowingToolTip = widgetThatWantsToShowToolTip;
 					widgetThatWantsToShowToolTip = null;
+					widgetThatWasShowingToolTip = null;
 				}
 			}
+		}
+
+		public void Clear()
+		{
+			widgetThatWasShowingToolTip = widgetThatIsShowingToolTip;
+			RemoveToolTip();
+			widgetThatIsShowingToolTip = null;
+			timeCurrentToolTipHasBeenShowing.Stop();
+			timeCurrentToolTipHasBeenShowing.Reset();
 		}
 
 		private void RemoveToolTip()
@@ -259,19 +283,27 @@ namespace MatterHackers.Agg.UI
 			{
 				ToolTipPop?.Invoke(this, null);
 
-				//widgetThatWantsToShowToolTip = null;
+				// widgetThatWantsToShowToolTip = null;
 				timeSinceLastMouseMove.Stop();
 				timeSinceLastMouseMove.Reset();
-				systemWindow.RemoveChild(toolTipWidget);
+
+				toolTipWidget.Close();
 				toolTipWidget = null;
 				toolTipText = "";
 
-				//timeSinceLastToolTipClose.Reset();
-				//timeSinceLastToolTipCloseWasRunning = true;
+				// timeSinceLastToolTipClose.Reset();
+				// timeSinceLastToolTipCloseWasRunning = true;
 				timeSinceLastToolTipClose.Restart();
 
 				Debug.WriteLine("RemoveToolTip {0}".FormatWith(count++));
 			}
+		}
+
+		public void Dispose()
+		{
+			// Unregister listeners
+			systemWindow.MouseMove -= this.SystemWindow_MouseMove;
+			UiThread.ClearInterval(runningInterval);
 		}
 	}
 }

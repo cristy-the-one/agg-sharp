@@ -62,7 +62,7 @@ namespace Net3dBool
 		/// </summary>
 		private readonly static double EqualityTolerance = 1e-10f;
 
-		private Dictionary<long, int> addedVertices = new Dictionary<long, int>();
+		private Dictionary<ulong, int> addedVertices = new Dictionary<ulong, int>();
 
 		/// <summary>
 		/// object representing the solid extremes
@@ -99,7 +99,7 @@ namespace Net3dBool
 
 			//create faces
 			totalBounds.Expand(1);
-			Faces = new Octree<CsgFace>(5, new Bounds(totalBounds));
+			Faces = new Octree<CsgFace>(5, totalBounds);
 			for (int i = 0; i < indices.Length; i = i + 3)
 			{
 				v1 = verticesTemp[indices[i]];
@@ -123,12 +123,14 @@ namespace Net3dBool
 		/// Classify faces as being inside, outside or on boundary of other object
 		/// </summary>
 		/// <param name="otherObject">object 3d used for the comparison</param>
-		public void ClassifyFaces(CsgObject3D otherObject, Action<CsgFace> classifyFaces = null)
+		public void ClassifyFaces(CsgObject3D otherObject, CancellationToken cancellationToken, Action<CsgFace> classifyFaces = null)
 		{
 			var otherBounds = otherObject.Bounds;
 			foreach (var vertex in vertices)
 			{
-				if(!otherBounds.Contains(vertex.Position)
+				cancellationToken.ThrowIfCancellationRequested();
+
+				if (!otherBounds.Contains(vertex.Position)
 					&& vertex.Status != FaceStatus.Outside)
 				{
 					vertex.Status = FaceStatus.Outside;
@@ -136,8 +138,11 @@ namespace Net3dBool
 			}
 
 			//calculate adjacency information
-			foreach (CsgFace face in Faces.All())
+			Faces.All();
+			foreach (var face in Faces.QueryResults)
 			{
+				cancellationToken.ThrowIfCancellationRequested();
+
 				face.v1.AddAdjacentVertex(face.v2);
 				face.v1.AddAdjacentVertex(face.v3);
 				face.v2.AddAdjacentVertex(face.v1);
@@ -147,8 +152,10 @@ namespace Net3dBool
 			}
 
 			// for each face
-			foreach (CsgFace face in Faces.All())
+			foreach (var face in Faces.QueryResults)
 			{
+				cancellationToken.ThrowIfCancellationRequested();
+
 				// If the face vertices can't be classified with the simple classify
 				if (face.SimpleClassify() == false)
 				{
@@ -188,7 +195,8 @@ namespace Net3dBool
 		/// </summary>
 		public void InvertInsideFaces()
 		{
-			foreach (CsgFace face in Faces.All())
+			Faces.All();
+			foreach (var face in Faces.QueryResults)
 			{
 				if (face.Status == FaceStatus.Inside)
 				{
@@ -211,8 +219,9 @@ namespace Net3dBool
 
 			//if the objects bounds overlap...
 			//for each object1 face...
-			var bounds = new Bounds(compareObject.GetBound());
-			foreach (CsgFace thisFaceIn in Faces.SearchBounds(bounds).ToArray()) // put it in an array as we will be adding new faces to it
+			var bounds = compareObject.GetBound();
+			Faces.SearchBounds(bounds);
+			foreach (var thisFaceIn in Faces.QueryResults) // put it in an array as we will be adding new faces to it
 			{
 				newFacesFromSplitting.Push(thisFaceIn);
 				// make sure we process every face that we have added during splitting before moving on to the next face
@@ -222,14 +231,11 @@ namespace Net3dBool
 
 					// stop processing if operation has been canceled
 					cancellationToken.ThrowIfCancellationRequested();
-					if(cancellationToken.IsCancellationRequested)
-					{
-						return;
-					}
 
 					//if object1 face bound and object2 bound overlap ...
 					//for each object2 face...
-					foreach (CsgFace cuttingFace in compareObject.Faces.SearchBounds(new Bounds(faceToSplit.GetBound())))
+					compareObject.Faces.SearchBounds(faceToSplit.GetBound());
+					foreach (var cuttingFace in compareObject.Faces.QueryResults)
 					{
 						//if object1 face bound and object2 face bound overlap...
 						//PART I - DO TWO POLIGONS INTERSECT?
@@ -307,7 +313,7 @@ namespace Net3dBool
 				CsgFace face = new CsgFace(v1, v2, v3);
 				if (face.GetArea() > EqualityTolerance)
 				{
-					Faces.Insert(face, new Bounds(face.GetBound()));
+					Faces.Insert(face, face.GetBound());
 
 					return face;
 				}
@@ -342,7 +348,7 @@ namespace Net3dBool
 					}
 					if (!exists)
 					{
-						Faces.Insert(face, new Bounds(face.GetBound()));
+						Faces.Insert(face, face.GetBound());
 						facesFromSplit.Push(face);
 					}
 				}
@@ -904,34 +910,34 @@ namespace Net3dBool
 				//FACE-FACE-EDGE
 				return BreakFaceInFour(face, endPos, startPos, endVertex, facesFromSplit);
 			}
-			else if (startType == SegmentEnd.Face 
+			else if (startType == SegmentEnd.Face
 				&& endType == SegmentEnd.Face)
 			{
 				//FACE-FACE-FACE
 				Vector3 segmentVector = new Vector3(startPos.X - endPos.X, startPos.Y - endPos.Y, startPos.Z - endPos.Z);
 
 				//if the intersection segment is a point only...
-				if (Math.Abs(segmentVector.X) < EqualityTolerance 
-					&& Math.Abs(segmentVector.Y) < EqualityTolerance 
+				if (Math.Abs(segmentVector.X) < EqualityTolerance
+					&& Math.Abs(segmentVector.Y) < EqualityTolerance
 					&& Math.Abs(segmentVector.Z) < EqualityTolerance)
 				{
 					return BreakFaceInThree(face, startPos, facesFromSplit);
 				}
 
 				//gets the vertex more lined with the intersection segment
-				double dot1 = Math.Abs(Vector3.Dot(segmentVector, (endPos - face.v1.Position).GetNormal()));
-				double dot2 = Math.Abs(Vector3.Dot(segmentVector, (endPos - face.v2.Position).GetNormal()));
-				double dot3 = Math.Abs(Vector3.Dot(segmentVector, (endPos - face.v3.Position).GetNormal()));
+				double dot1 = Math.Abs(Vector3Ex.Dot(segmentVector, (endPos - face.v1.Position).GetNormal()));
+				double dot2 = Math.Abs(Vector3Ex.Dot(segmentVector, (endPos - face.v2.Position).GetNormal()));
+				double dot3 = Math.Abs(Vector3Ex.Dot(segmentVector, (endPos - face.v3.Position).GetNormal()));
 
 				int linedVertex;
 				Vector3 linedVertexPos;
-				if (dot1 > dot2 
+				if (dot1 > dot2
 					&& dot1 > dot3)
 				{
 					linedVertex = 1;
 					linedVertexPos = face.v1.Position;
 				}
-				else if (dot2 > dot3 
+				else if (dot2 > dot3
 					&& dot2 > dot1)
 				{
 					linedVertex = 2;

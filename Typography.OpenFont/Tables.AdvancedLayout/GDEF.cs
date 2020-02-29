@@ -1,4 +1,4 @@
-﻿//Apache2, 2016-2017, WinterDev
+﻿//Apache2, 2016-present, WinterDev
 using System;
 using System.IO;
 
@@ -64,16 +64,13 @@ namespace Typography.OpenFont.Tables
 
     class GDEF : TableEntry
     {
-        long tableStartAt;
-
-        public override string Name
-        {
-            get { return "GDEF"; }
-        }
-
+        public const string _N = "GDEF";
+        public override string Name => _N;
+        //
+        long _tableStartAt;
         protected override void ReadContentFrom(BinaryReader reader)
         {
-            tableStartAt = reader.BaseStream.Position;
+            _tableStartAt = reader.BaseStream.Position;
             //-----------------------------------------
             //GDEF Header, Version 1.0
             //Type 	    Name 	            Description
@@ -134,9 +131,9 @@ namespace Typography.OpenFont.Tables
             //---------------
 
 
-            this.GlyphClassDef = (glyphClassDefOffset == 0) ? null : ClassDefTable.CreateFrom(reader, tableStartAt + glyphClassDefOffset);
-            this.AttachmentListTable = (attachListOffset == 0) ? null : AttachmentListTable.CreateFrom(reader, tableStartAt + attachListOffset);
-            this.LigCaretList = (ligCaretListOffset == 0) ? null : LigCaretList.CreateFrom(reader, tableStartAt + ligCaretListOffset);
+            this.GlyphClassDef = (glyphClassDefOffset == 0) ? null : ClassDefTable.CreateFrom(reader, _tableStartAt + glyphClassDefOffset);
+            this.AttachmentListTable = (attachListOffset == 0) ? null : AttachmentListTable.CreateFrom(reader, _tableStartAt + attachListOffset);
+            this.LigCaretList = (ligCaretListOffset == 0) ? null : LigCaretList.CreateFrom(reader, _tableStartAt + ligCaretListOffset);
 
             //A Mark Attachment Class Definition Table defines the class to which a mark glyph may belong.
             //This table uses the same format as the Class Definition table (for details, see the chapter, Common Table Formats ).
@@ -150,13 +147,13 @@ namespace Typography.OpenFont.Tables
             }
             else
             {
-                this.MarkAttachmentClassDef = (markAttachClassDefOffset == 0) ? null : ClassDefTable.CreateFrom(reader, tableStartAt + markAttachClassDefOffset);
+                this.MarkAttachmentClassDef = (markAttachClassDefOffset == 0) ? null : ClassDefTable.CreateFrom(reader, _tableStartAt + markAttachClassDefOffset);
             }
 #else
-            this.MarkAttachmentClassDef = (markAttachClassDefOffset == 0) ? null : ClassDefTable.CreateFrom(reader, tableStartAt + markAttachClassDefOffset);
+            this.MarkAttachmentClassDef = (markAttachClassDefOffset == 0) ? null : ClassDefTable.CreateFrom(reader, _tableStartAt + markAttachClassDefOffset);
 #endif
 
-            this.MarkGlyphSetsTable = (markGlyphSetsDefOffset == 0) ? null : MarkGlyphSetsTable.CreateFrom(reader, tableStartAt + markGlyphSetsDefOffset);
+            this.MarkGlyphSetsTable = (markGlyphSetsDefOffset == 0) ? null : MarkGlyphSetsTable.CreateFrom(reader, _tableStartAt + markGlyphSetsDefOffset);
 
             if (itemVarStoreOffset != 0)
             {
@@ -178,7 +175,7 @@ namespace Typography.OpenFont.Tables
         /// fill gdef to each glyphs
         /// </summary>
         /// <param name="inputGlyphs"></param>
-        public void FillGlyphData(TtfGlyph[] inputGlyphs)
+        public void FillGlyphData(Glyph[] inputGlyphs)
         {
             //1. 
             FillClassDefs(inputGlyphs);
@@ -191,7 +188,7 @@ namespace Typography.OpenFont.Tables
             //5.
             FillMarkGlyphSets(inputGlyphs);
         }
-        void FillClassDefs(TtfGlyph[] inputGlyphs)
+        void FillClassDefs(Glyph[] inputGlyphs)
         {
             //1. glyph def 
             ClassDefTable classDef = GlyphClassDef;
@@ -207,10 +204,17 @@ namespace Typography.OpenFont.Tables
                     {
                         ushort startGlyph = classDef.startGlyph;
                         ushort[] classValues = classDef.classValueArray;
-                        int len = classValues.Length;
                         int gIndex = startGlyph;
-                        for (int i = 0; i < len; ++i)
+                        for (int i = 0; i < classValues.Length; ++i)
                         {
+#if DEBUG
+                            ushort classV = classValues[i];
+                            if (classV > (ushort)GlyphClassKind.Component)
+                            {
+
+                            }
+#endif
+
                             inputGlyphs[gIndex].GlyphClass = (GlyphClassKind)classValues[i];
                             gIndex++;
                         }
@@ -220,10 +224,18 @@ namespace Typography.OpenFont.Tables
                 case 2:
                     {
                         ClassDefTable.ClassRangeRecord[] records = classDef.records;
-                        int len = records.Length;
-                        for (int n = 0; n < len; ++n)
+                        for (int n = 0; n < records.Length; ++n)
                         {
                             ClassDefTable.ClassRangeRecord rec = records[n];
+
+#if DEBUG
+
+                            if (rec.classNo > (ushort)GlyphClassKind.Component)
+                            {
+
+                            }
+#endif
+
                             GlyphClassKind glyphKind = (GlyphClassKind)rec.classNo;
                             for (int i = rec.startGlyphId; i <= rec.endGlyphId; ++i)
                             {
@@ -234,7 +246,7 @@ namespace Typography.OpenFont.Tables
                     break;
             }
         }
-        void FillAttachPoints(TtfGlyph[] inputGlyphs)
+        void FillAttachPoints(Glyph[] inputGlyphs)
         {
             AttachmentListTable attachmentListTable = this.AttachmentListTable;
             if (attachmentListTable == null) { return; }
@@ -242,11 +254,11 @@ namespace Typography.OpenFont.Tables
 
             Utils.WarnUnimplemented("please implement GDEF.FillAttachPoints()");
         }
-        void FillLigatureCarets(TtfGlyph[] inputGlyphs)
+        void FillLigatureCarets(Glyph[] inputGlyphs)
         {
             //Console.WriteLine("please implement FillLigatureCarets()");
         }
-        void FillMarkAttachmentClassDefs(TtfGlyph[] inputGlyphs)
+        void FillMarkAttachmentClassDefs(Glyph[] inputGlyphs)
         {
             //Mark Attachment Class Definition Table
             //A Mark Class Definition Table is used to assign mark glyphs into different classes 
@@ -272,7 +284,7 @@ namespace Typography.OpenFont.Tables
                         for (int i = 0; i < len; ++i)
                         {
 #if DEBUG
-                            TtfGlyph dbugTestGlyph = inputGlyphs[gIndex];
+                            Glyph dbugTestGlyph = inputGlyphs[gIndex];
 #endif
                             inputGlyphs[gIndex].MarkClassDef = classValues[i];
                             gIndex++;
@@ -290,7 +302,7 @@ namespace Typography.OpenFont.Tables
                             for (int i = rec.startGlyphId; i <= rec.endGlyphId; ++i)
                             {
 #if DEBUG
-                                TtfGlyph dbugTestGlyph = inputGlyphs[i];
+                                Glyph dbugTestGlyph = inputGlyphs[i];
 #endif
                                 inputGlyphs[i].MarkClassDef = rec.classNo;
                             }
@@ -299,7 +311,7 @@ namespace Typography.OpenFont.Tables
                     break;
             }
         }
-        void FillMarkGlyphSets(TtfGlyph[] inputGlyphs)
+        void FillMarkGlyphSets(Glyph[] inputGlyphs)
         {
             //Mark Glyph Sets Table
             //A Mark Glyph Sets table is used to define sets of mark glyphs that can be used in lookup tables within the GSUB or GPOS table to control 

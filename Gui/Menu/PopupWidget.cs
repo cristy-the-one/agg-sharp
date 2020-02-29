@@ -11,15 +11,26 @@ namespace MatterHackers.Agg.UI
 	/// </summary>
 	public interface IIgnoredPopupChild
 	{
+		bool KeepMenuOpen { get; }
+		bool ContainsFocus { get; }
+		bool Focused { get; }
+	}
+
+	public interface IMenuCreator
+	{
+		bool AlwaysKeepOpen { get; }
 	}
 
 	public class IgnoredPopupWidget : GuiWidget, IIgnoredPopupChild
 	{
+		public virtual bool KeepMenuOpen => false;
 	}
 
 	public interface IPopupLayoutEngine
 	{
 		double MaxHeight { get; }
+
+		GuiWidget Anchor { get; }
 
 		void Closed();
 
@@ -33,6 +44,9 @@ namespace MatterHackers.Agg.UI
 		private ScrollableWidget scrollingWindow;
 		private Vector2 scrollPositionAtMouseDown;
 		private Vector2 scrollPositionAtMouseUp;
+		private bool holdingOpenForChild;
+
+		public static bool DebugKeepOpen { get; set; } = false;
 
 		public PopupWidget(GuiWidget contentWidget, IPopupLayoutEngine layoutEngine, bool makeScrollable)
 		{
@@ -40,12 +54,9 @@ namespace MatterHackers.Agg.UI
 
 			this.layoutEngine = layoutEngine;
 
-			ignoredWidgets = contentWidget.Children.Where(c => c is IIgnoredPopupChild).ToList();
+			ignoredWidgets = contentWidget.Children.OfType<IIgnoredPopupChild>().ToList();
 
-			if (contentWidget is IIgnoredPopupChild)
-			{
-				ignoredWidgets.Add(contentWidget);
-			}
+			contentWidget.Closed += (s, e) => this.Close();
 
 			if (makeScrollable)
 			{
@@ -83,7 +94,7 @@ namespace MatterHackers.Agg.UI
 		}
 
 		public int BorderWidth { get; set; }
-		private List<GuiWidget> ignoredWidgets { get; }
+		List<IIgnoredPopupChild> ignoredWidgets { get; }
 
 		public virtual void CloseMenu()
 		{
@@ -99,40 +110,6 @@ namespace MatterHackers.Agg.UI
 			layoutEngine.Closed();
 
 			base.OnClosed(e);
-		}
-
-		public override void OnContainsFocusChanged(EventArgs e)
-		{
-			UiThread.RunOnIdle(() =>
-			{
-				var openDropList = this.Descendants<DropDownList>().Where(w => w.IsOpen).FirstOrDefault();
-
-				// Fired any time focus changes. Traditionally we closed the menu if the we weren't focused.
-				// To accommodate children (or external widgets) having focus we also query for and consider special cases
-				bool specialChildHasFocus = ignoredWidgets.Any(w => w.ContainsFocus || w.Focused)
-					|| openDropList != null;
-
-				// If the focused changed and we've lost focus and no special cases permit, close the menu
-				if (!this.ContainsFocus
-					&& !specialChildHasFocus)
-				{
-					this.CloseMenu();
-				}
-				else if (openDropList != null)
-				{
-					EventHandler focusOnChildClose = null;
-
-					focusOnChildClose = (s, e2) =>
-					{
-						this.Focus();
-						openDropList.Closed -= focusOnChildClose;
-					};
-
-					openDropList.Closed += focusOnChildClose;
-				}
-			});
-
-			base.OnContainsFocusChanged(e);
 		}
 
 		public override void OnDraw(Graphics2D graphics2D)
@@ -155,22 +132,86 @@ namespace MatterHackers.Agg.UI
 
 			if (scrollingWindow != null)
 			{
-				bool mouseUpOnIgnoredChild = ignoredWidgets.Any(w => w.MouseCaptured || w.ChildHasMouseCaptured);
+				bool specialChildHasFocus = ignoredWidgets.Any(w => w.ContainsFocus || w.Focused || w.KeepMenuOpen);
+				bool descendantIsHoldingOpen = this.Descendants<GuiWidget>().Any(w => w is IIgnoredPopupChild ignoredPopupChild
+					&& ignoredPopupChild.KeepMenuOpen);
+// 					&& ((ignoredPopupChild.ContainsFocus || ignoredPopupChild.KeepMenuOpen()) && !this.ContainsFocus));
 
-				bool clickIsInsideScrollArea = (scrollingWindow?.ScrollArea?.Children?[0]?.ChildHasMouseCaptured == true);
+				bool clickIsInsideScrollArea = scrollingWindow?.ScrollArea?.Children?.FirstOrDefault()?.ChildHasMouseCaptured == true;
+
+				bool keepMeOpen = false;
+
+				if (layoutEngine.Anchor is IMenuCreator menuCreator)
+				{
+					keepMeOpen = menuCreator.AlwaysKeepOpen;
+				}
 
 				scrollPositionAtMouseUp = scrollingWindow.ScrollPosition;
 				if (!scrollingWindow.VerticalScrollBar.ChildHasMouseCaptured
 					&& AllowClickingItems()
 					&& clickIsInsideScrollArea
-					&& !mouseUpOnIgnoredChild)
+					&& !specialChildHasFocus
+					&& !descendantIsHoldingOpen
+					&& !holdingOpenForChild
+					&& !keepMeOpen
+					&& !DebugKeepOpen)
 				{
-					UiThread.RunOnIdle(CloseMenu);
+					UiThread.RunOnIdle(this.CloseMenu);
 				}
 			}
 
 			base.OnMouseUp(mouseEvent);
 		}
+
+		public override void OnContainsFocusChanged(FocusChangedArgs e)
+		{
+			if (!e.Focused)
+			{
+				bool reclaimFocus = false;
+
+				if (holdingOpenForChild)
+				{
+					holdingOpenForChild = false;
+					reclaimFocus = true;
+				}
+
+				UiThread.RunOnIdle(() =>
+				{
+					// Fired any time focus changes. Traditionally we closed the menu if we weren't focused.
+					// To accommodate children (or external widgets) having focus we also query for and consider special cases
+					bool specialChildHasFocus = ignoredWidgets.Any(w => w.ContainsFocus || w.Focused || w.KeepMenuOpen);
+					bool descendantIsHoldingOpen = this.Descendants<GuiWidget>().Any(w => w is IIgnoredPopupChild ignoredPopupChild
+						&& ignoredPopupChild.KeepMenuOpen);
+
+					bool keepMeOpen = false;
+
+					if (layoutEngine.Anchor is IMenuCreator menuCreator)
+					{
+						keepMeOpen = menuCreator.AlwaysKeepOpen;
+					}
+
+					// If the focused changed and we've lost focus and no special cases permit, close the menu
+					if (!this.ContainsFocus
+							&& !specialChildHasFocus
+							&& !descendantIsHoldingOpen
+							&& !holdingOpenForChild
+							&& !keepMeOpen
+							&& !DebugKeepOpen)
+					{
+						this.CloseMenu();
+					}
+					else if (reclaimFocus && !descendantIsHoldingOpen)
+					{
+						this.Focus();
+					}
+
+					holdingOpenForChild = descendantIsHoldingOpen;
+				});
+			}
+
+			base.OnContainsFocusChanged(e);
+		}
+
 
 		public void ScrollIntoView(GuiWidget widget)
 		{
@@ -212,7 +253,7 @@ namespace MatterHackers.Agg.UI
 		private GuiWidget contentWidget;
 		private Direction direction;
 		private bool checkIfNeedScrollBar = true;
-		private HashSet<GuiWidget> hookedParents = new HashSet<GuiWidget>();
+		private HashSet<GuiWidget> monitoredWidgets = new HashSet<GuiWidget>();
 		private PopupWidget popupWidget;
 		private SystemWindow windowToAddTo;
 
@@ -225,15 +266,17 @@ namespace MatterHackers.Agg.UI
 			this.widgetRelativeTo = widgetRelativeTo;
 		}
 
+		public GuiWidget Anchor => widgetRelativeTo;
+
 		public double MaxHeight { get; private set; }
 
 		public void Closed()
 		{
 			// Unbind callbacks on parents for position_changed if we're closing
-			foreach (GuiWidget widget in hookedParents)
+			foreach (GuiWidget widget in monitoredWidgets)
 			{
-				widget.PositionChanged -= widgetRelativeTo_PositionChanged;
-				widget.BoundsChanged -= widgetRelativeTo_PositionChanged;
+				widget.PositionChanged -= recalculatePosition;
+				widget.BoundsChanged -= recalculatePosition;
 			}
 
 			// Long lived originating item must be unregistered
@@ -255,26 +298,33 @@ namespace MatterHackers.Agg.UI
 		public void ShowPopup(PopupWidget popupWidget)
 		{
 			this.popupWidget = popupWidget;
-			windowToAddTo = widgetRelativeTo.Parents<SystemWindow>().FirstOrDefault();
+			windowToAddTo = widgetRelativeTo.Parents<SystemWindow>().LastOrDefault();
 			windowToAddTo?.AddChild(popupWidget);
 
+			monitoredWidgets.Clear();
+
+			monitoredWidgets.Add(popupWidget);
+			popupWidget.PositionChanged += recalculatePosition;
+			popupWidget.BoundsChanged += recalculatePosition;
+
+			// Iterate until the first SystemWindow is found
 			GuiWidget topParent = widgetRelativeTo.Parent;
 			while (topParent.Parent != null
 				&& topParent as SystemWindow == null)
 			{
 				// Regrettably we don't know who it is that is the window that will actually think it is moving relative to its parent
 				// but we need to know anytime our widgetRelativeTo has been moved by any change, so we hook them all.
-				if (!hookedParents.Contains(topParent))
+				if (!monitoredWidgets.Contains(topParent))
 				{
-					hookedParents.Add(topParent);
-					topParent.PositionChanged += widgetRelativeTo_PositionChanged;
-					topParent.BoundsChanged += widgetRelativeTo_PositionChanged;
+					monitoredWidgets.Add(topParent);
+					topParent.PositionChanged += recalculatePosition;
+					topParent.BoundsChanged += recalculatePosition;
 				}
 
 				topParent = topParent.Parent;
 			}
 
-			widgetRelativeTo_PositionChanged(widgetRelativeTo, null);
+			recalculatePosition(widgetRelativeTo, null);
 			widgetRelativeTo.Closed += widgetRelativeTo_Closed;
 		}
 
@@ -284,11 +334,14 @@ namespace MatterHackers.Agg.UI
 			popupWidget.CloseMenu();
 		}
 
-		private void widgetRelativeTo_PositionChanged(object sender, EventArgs e)
+		int recursCount = 0;
+		private void recalculatePosition(object sender, EventArgs e)
 		{
-			if (widgetRelativeTo != null
+			if (recursCount == 0
+				&& widgetRelativeTo != null
 				&& widgetRelativeTo.Parent != null)
 			{
+				recursCount++;
 
 				var systemWindowWidth = windowToAddTo.Width;
 
@@ -299,7 +352,7 @@ namespace MatterHackers.Agg.UI
 
 				// Calculate right aligned screen space position (using widgetRelativeTo.parent)
 				var bottomLeftForAlignRight = widgetRelativeTo.Position - new Vector2(popupWidget.Width - widgetRelativeTo.LocalBounds.Width, 0);
-				Vector2 alignRightPosition = widgetRelativeTo.Parent.TransformToScreenSpace( bottomLeftForAlignRight);
+				Vector2 alignRightPosition = widgetRelativeTo.Parent.TransformToScreenSpace(bottomLeftForAlignRight);
 
 				// Conditionally select appropriate left/right position
 				if (alignToRightEdge && alignRightPosition.X >= 0
@@ -360,6 +413,7 @@ namespace MatterHackers.Agg.UI
 					default:
 						throw new NotImplementedException();
 				}
+				recursCount--;
 			}
 		}
 	}

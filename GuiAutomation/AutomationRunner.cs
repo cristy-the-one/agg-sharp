@@ -41,7 +41,7 @@ using MatterHackers.Agg.Platform;
 using MatterHackers.Agg.UI;
 using MatterHackers.Agg.VertexSource;
 using MatterHackers.VectorMath;
-using static MatterHackers.Agg.Easing;
+using static MatterHackers.VectorMath.Easing;
 
 namespace MatterHackers.GuiAutomation
 {
@@ -63,22 +63,24 @@ namespace MatterHackers.GuiAutomation
 
 		public enum InputType { Native, Simulated, SimulatedDrawMouse };
 
+		public static IInputMethod OverrideInputSystem = null;
+
 		// change default to SimulatedDrawMouse
-		public AutomationRunner(string imageDirectory = "", InputType inputType = InputType.SimulatedDrawMouse)
+		public AutomationRunner(IInputMethod inputMethod, bool drawSimulatedMouse, string imageDirectory = "")
 		{
 #if !__ANDROID__
-			if (inputType == InputType.Native)
+			if(OverrideInputSystem != null)
 			{
-				inputSystem = new WindowsInputMethods();
+				inputSystem = OverrideInputSystem;
 			}
 			else
 			{
-				inputSystem = new AggInputMethods(this, inputType == InputType.SimulatedDrawMouse);
+				inputSystem = new AggInputMethods(this, drawSimulatedMouse);
 				// TODO: Consider how to set this and if needed
 				//HookWindowsInputAndSendToWidget.EnableInputHook = false;
 			}
 #else
-				inputSystem = new AggInputMethods(this, inputType == InputType.SimulatedDrawMouse);
+				inputSystem = new AggInputMethods(this, drawSimulatedMouse);
 #endif
 			this.imageDirectory = imageDirectory;
 		}
@@ -158,13 +160,13 @@ namespace MatterHackers.GuiAutomation
 					return 0;
 
 				case MouseButtons.Left:
-					return NativeMethods.MOUSEEVENTF_LEFTDOWN;
+					return MouseConsts.MOUSEEVENTF_LEFTDOWN;
 
 				case MouseButtons.Right:
-					return NativeMethods.MOUSEEVENTF_RIGHTDOWN;
+					return MouseConsts.MOUSEEVENTF_RIGHTDOWN;
 
 				case MouseButtons.Middle:
-					return NativeMethods.MOUSEEVENTF_MIDDLEDOWN;
+					return MouseConsts.MOUSEEVENTF_MIDDLEDOWN;
 
 				default:
 					return 0;
@@ -179,13 +181,13 @@ namespace MatterHackers.GuiAutomation
 					return 0;
 
 				case MouseButtons.Left:
-					return NativeMethods.MOUSEEVENTF_LEFTUP;
+					return MouseConsts.MOUSEEVENTF_LEFTUP;
 
 				case MouseButtons.Right:
-					return NativeMethods.MOUSEEVENTF_RIGHTUP;
+					return MouseConsts.MOUSEEVENTF_RIGHTUP;
 
 				case MouseButtons.Middle:
-					return NativeMethods.MOUSEEVENTF_MIDDLEUP;
+					return MouseConsts.MOUSEEVENTF_MIDDLEUP;
 
 				default:
 					return 0;
@@ -330,7 +332,7 @@ namespace MatterHackers.GuiAutomation
 
 				Point2D screenPosition = new Point2D((int)matchPosition.X + offset.x, clickYOnScreen);
 				SetMouseCursorPosition(screenPosition.x, screenPosition.y);
-				inputSystem.CreateMouseEvent(NativeMethods.MOUSEEVENTF_LEFTDOWN, screenPosition.x, screenPosition.y, 0, 0);
+				inputSystem.CreateMouseEvent(MouseConsts.MOUSEEVENTF_LEFTDOWN, screenPosition.x, screenPosition.y, 0, 0);
 
 				return true;
 			}
@@ -372,7 +374,7 @@ namespace MatterHackers.GuiAutomation
 
 				Point2D screenPosition = new Point2D((int)matchPosition.X + offset.x, clickYOnScreen);
 				SetMouseCursorPosition(screenPosition.x, screenPosition.y);
-				inputSystem.CreateMouseEvent(NativeMethods.MOUSEEVENTF_LEFTUP, screenPosition.x, screenPosition.y, 0, 0);
+				inputSystem.CreateMouseEvent(MouseConsts.MOUSEEVENTF_LEFTUP, screenPosition.x, screenPosition.y, 0, 0);
 
 				return true;
 			}
@@ -565,6 +567,22 @@ namespace MatterHackers.GuiAutomation
 			return GetWidgetByName(widgetName, out containingWindow, out _, secondsToWait, searchRegion, onlyVisible);
 		}
 
+
+		GuiWidget lastWidget = null;
+
+		private void SetTarget(GuiWidget guiWidget)
+		{
+			if (lastWidget != null)
+			{
+				lastWidget.DebugShowBounds = false;
+			}
+
+			lastWidget = guiWidget;
+			lastWidget.DebugShowBounds = true;
+
+			UiThread.RunOnIdle(() => guiWidget.DebugShowBounds = false, 1);
+		}
+
 		public GuiWidget GetWidgetByName(string widgetName, out SystemWindow containingWindow, out Point2D offsetHint, double secondsToWait = 5, SearchRegion searchRegion = null, bool onlyVisible = true)
 		{
 			containingWindow = null;
@@ -574,10 +592,10 @@ namespace MatterHackers.GuiAutomation
 			if (getResults != null
 				&& getResults.Count > 0)
 			{
+				this.SetTarget(getResults[0].Widget);
+
 				containingWindow = getResults[0].ContainingSystemWindow;
 				offsetHint = getResults[0].OffsetHint;
-				getResults[0].Widget.DebugShowBounds = true;
-				UiThread.RunOnIdle(() => getResults[0].Widget.DebugShowBounds = false, 1);
 
 				return getResults[0].Widget;
 			}
@@ -599,10 +617,10 @@ namespace MatterHackers.GuiAutomation
 			if (getResults != null
 				&& getResults.Count > 0)
 			{
+				this.SetTarget(getResults[0].Widget);
+
 				containingWindow = getResults[0].ContainingSystemWindow;
 				offsetHint = getResults[0].OffsetHint;
-				getResults[0].Widget.DebugShowBounds = true;
-				UiThread.RunOnIdle(() => getResults[0].Widget.DebugShowBounds = false, 1);
 
 				return getResults[0].NamedObject;
 			}
@@ -642,34 +660,32 @@ namespace MatterHackers.GuiAutomation
 			{
 				if (searchRegion != null) // only add the widgets that are in the screen region
 				{
-					List<GuiWidget.WidgetAndPosition> namedWidgets = new List<GuiWidget.WidgetAndPosition>();
-					systemWindow.FindNamedChildrenRecursive(widgetName, namedWidgets);
+					var namedWidgets = systemWindow.FindDescendants(widgetName);
 					foreach (GuiWidget.WidgetAndPosition widgetAndPosition in namedWidgets)
 					{
 						if (!onlyVisible
-							|| widgetAndPosition.widget.ActuallyVisibleOnScreen())
+							|| widgetAndPosition.Widget.ActuallyVisibleOnScreen())
 						{
-							RectangleDouble childBounds = widgetAndPosition.widget.TransformToParentSpace(systemWindow, widgetAndPosition.widget.LocalBounds);
+							RectangleDouble childBounds = widgetAndPosition.Widget.TransformToParentSpace(systemWindow, widgetAndPosition.Widget.LocalBounds);
 
 							ScreenRectangle screenRect = SystemWindowToScreen(childBounds, systemWindow);
 							ScreenRectangle result;
 							if (ScreenRectangle.Intersection(searchRegion.ScreenRect, screenRect, out result))
 							{
-								namedWidgetsInRegion.Add(new GetByNameResults(widgetAndPosition.widget, widgetAndPosition.position, systemWindow, widgetAndPosition.NamedObject));
+								namedWidgetsInRegion.Add(new GetByNameResults(widgetAndPosition.Widget, widgetAndPosition.Position, systemWindow, widgetAndPosition.NamedObject));
 							}
 						}
 					}
 				}
 				else // add every named widget found
 				{
-					List<GuiWidget.WidgetAndPosition> namedWidgets = new List<GuiWidget.WidgetAndPosition>();
-					systemWindow.FindNamedChildrenRecursive(widgetName, namedWidgets);
+					var namedWidgets = systemWindow.FindDescendants(widgetName);
 					foreach (GuiWidget.WidgetAndPosition namedWidget in namedWidgets)
 					{
 						if (!onlyVisible
-							|| namedWidget.widget.ActuallyVisibleOnScreen())
+							|| namedWidget.Widget.ActuallyVisibleOnScreen())
 						{
-							namedWidgetsInRegion.Add(new GetByNameResults(namedWidget.widget, namedWidget.position, systemWindow, namedWidget.NamedObject));
+							namedWidgetsInRegion.Add(new GetByNameResults(namedWidget.Widget, namedWidget.Position, systemWindow, namedWidget.NamedObject));
 						}
 					}
 				}
@@ -688,31 +704,54 @@ namespace MatterHackers.GuiAutomation
 			double secondsToWait = 5;
 
 			GuiWidget widgetToClick = GetWidgetByName(widgetName, out SystemWindow containingWindow, out Point2D offsetHint, secondsToWait, searchRegion);
+
 			if (widgetToClick != null)
 			{
-				MoveMouseToWidget(widgetToClick, containingWindow, offset, offsetHint, origin, out Point2D screenPosition);
-				inputSystem.CreateMouseEvent(NativeMethods.MOUSEEVENTF_LEFTDOWN, screenPosition.x, screenPosition.y, 0, 0);
-				WaitforDraw(containingWindow);
-
-				if (isDoubleClick)
-				{
-					Thread.Sleep(150);
-					inputSystem.CreateMouseEvent(NativeMethods.MOUSEEVENTF_LEFTDOWN, screenPosition.x, screenPosition.y, 0, 0);
-					WaitforDraw(containingWindow);
-				}
-
-				Delay(UpDelaySeconds);
-
-				inputSystem.CreateMouseEvent(NativeMethods.MOUSEEVENTF_LEFTUP, screenPosition.x, screenPosition.y, 0, 0);
-
-				WaitforDraw(containingWindow);
-
-				Delay(0.2);
+				this.ClickWidget(widgetToClick, containingWindow, origin, offset, offsetHint, isDoubleClick);
 
 				return;
 			}
 
 			throw new Exception($"ClickByName Failed: Named GuiWidget not found [{widgetName}]");
+		}
+
+		/// <summary>
+		/// Click the given widget via automation methods
+		/// </summary>
+		/// <param name="widget">The widget to click</param>
+		public void ClickWidget(GuiWidget widget)
+		{
+			var systemWindow = widget.Parents<SystemWindow>().FirstOrDefault();
+			var center = widget.LocalBounds.Center;
+
+			this.ClickWidget(
+				widget,
+				systemWindow,
+				ClickOrigin.Center,
+				Point2D.Zero,
+				new Point2D(center.X, center.Y));
+		}
+
+		private void ClickWidget(GuiWidget widget, SystemWindow containingWindow, ClickOrigin origin, Point2D offset, Point2D offsetHint, bool isDoubleClick = false)
+		{
+			MoveMouseToWidget(widget, containingWindow, offset, offsetHint, origin, out Point2D screenPosition);
+			inputSystem.CreateMouseEvent(MouseConsts.MOUSEEVENTF_LEFTDOWN, screenPosition.x, screenPosition.y, 0, 0);
+			WaitforDraw(containingWindow);
+
+			if (isDoubleClick)
+			{
+				Thread.Sleep(150);
+				inputSystem.CreateMouseEvent(MouseConsts.MOUSEEVENTF_LEFTDOWN, screenPosition.x, screenPosition.y, 0, 0);
+				WaitforDraw(containingWindow);
+			}
+
+			Delay(UpDelaySeconds);
+
+			inputSystem.CreateMouseEvent(MouseConsts.MOUSEEVENTF_LEFTUP, screenPosition.x, screenPosition.y, 0, 0);
+
+			WaitforDraw(containingWindow);
+
+			Delay(0.2);
 		}
 
 		/// <summary>
@@ -728,19 +767,19 @@ namespace MatterHackers.GuiAutomation
 			if (widgetToClick != null)
 			{
 				MoveMouseToWidget(widgetToClick, containingWindow, offset, offsetHint, origin, out Point2D screenPosition);
-				inputSystem.CreateMouseEvent(NativeMethods.MOUSEEVENTF_RIGHTDOWN, screenPosition.x, screenPosition.y, 0, 0);
+				inputSystem.CreateMouseEvent(MouseConsts.MOUSEEVENTF_RIGHTDOWN, screenPosition.x, screenPosition.y, 0, 0);
 				WaitforDraw(containingWindow);
 
 				if (isDoubleClick)
 				{
 					Thread.Sleep(150);
-					inputSystem.CreateMouseEvent(NativeMethods.MOUSEEVENTF_RIGHTDOWN, screenPosition.x, screenPosition.y, 0, 0);
+					inputSystem.CreateMouseEvent(MouseConsts.MOUSEEVENTF_RIGHTDOWN, screenPosition.x, screenPosition.y, 0, 0);
 					WaitforDraw(containingWindow);
 				}
 
 				Delay(UpDelaySeconds);
 
-				inputSystem.CreateMouseEvent(NativeMethods.MOUSEEVENTF_RIGHTUP, screenPosition.x, screenPosition.y, 0, 0);
+				inputSystem.CreateMouseEvent(MouseConsts.MOUSEEVENTF_RIGHTUP, screenPosition.x, screenPosition.y, 0, 0);
 
 				WaitforDraw(containingWindow);
 
@@ -872,22 +911,21 @@ namespace MatterHackers.GuiAutomation
 			// Ignore SystemWindows with null PlatformWindow members - SystemWindow constructed but not yet shown
 			foreach (SystemWindow window in SystemWindow.AllOpenSystemWindows.ToArray())
 			{
-				List<GuiWidget.WidgetAndPosition> foundChildren = new List<GuiWidget.WidgetAndPosition>();
-				window.FindNamedChildrenRecursive(widgetName, foundChildren);
+				var foundChildren = window.FindDescendants(widgetName);
 				if (foundChildren.Count > 0)
 				{
 					foreach (GuiWidget.WidgetAndPosition foundChild in foundChildren)
 					{
 						if (onlyVisible)
 						{
-							RectangleDouble childBounds = foundChild.widget.TransformToParentSpace(window, foundChild.widget.LocalBounds);
+							RectangleDouble childBounds = foundChild.Widget.TransformToParentSpace(window, foundChild.Widget.LocalBounds);
 
 							ScreenRectangle screenRect = SystemWindowToScreen(childBounds, window);
 							ScreenRectangle result;
 							if (searchRegion == null
 								|| ScreenRectangle.Intersection(searchRegion.ScreenRect, screenRect, out result))
 							{
-								if (foundChild.widget.ActuallyVisibleOnScreen())
+								if (foundChild.Widget.ActuallyVisibleOnScreen())
 								{
 									return true;
 								}
@@ -904,12 +942,16 @@ namespace MatterHackers.GuiAutomation
 			return false;
 		}
 
-		public bool WidgetExists<T>(SearchRegion searchRegion = null) where T : GuiWidget
+		public bool ChildExists<T>(SearchRegion searchRegion = null) where T : GuiWidget
 		{
 			// Ignore SystemWindows with null PlatformWindow members - SystemWindow constructed but not yet shown
-			foreach (SystemWindow window in SystemWindow.AllOpenSystemWindows.ToArray())
+			foreach (var systemWindow in SystemWindow.AllOpenSystemWindows.ToArray())
 			{
-				IEnumerable<T> foundChildren = window.Children<T>();
+				// Get either the topmost or active SystemWindow
+				var window = systemWindow.Parents<GuiWidget>().LastOrDefault() as SystemWindow ?? systemWindow;
+
+				// Single window implementation requires both windows to be checked
+				var foundChildren = window.Children<T>().Concat(systemWindow.Children<T>());
 				if (foundChildren.Count() > 0)
 				{
 					foreach (var foundChild in foundChildren)
@@ -1098,11 +1140,25 @@ namespace MatterHackers.GuiAutomation
 
 		#endregion Time
 
-		#region Prior TestHarness code
-
-		public static Task ShowWindowAndExecuteTests(SystemWindow initialSystemWindow, AutomationTest testMethod, double secondsToTestFailure = 30, string imagesDirectory = "", InputType inputType = InputType.SimulatedDrawMouse, Action closeWindow = null)
+		public void SelectAll()
 		{
-			var testRunner = new AutomationRunner(imagesDirectory, inputType);
+			// Type into focused widget
+			this.Type("^a"); // select all
+		}
+
+		public void SelectNone()
+		{
+			// Type into focused widget
+			this.Type(" "); // clear the selection (type a space)
+		}
+
+		public static IInputMethod InputMethod { get; set; }
+
+		public static bool DrawSimulatedMouse { get; set; } = true;
+
+		public static Task ShowWindowAndExecuteTests(SystemWindow initialSystemWindow, AutomationTest testMethod, double secondsToTestFailure = 30, string imagesDirectory = "", Action closeWindow = null)
+		{
+			var testRunner = new AutomationRunner(InputMethod, DrawSimulatedMouse, imagesDirectory);
 
 			var resetEvent = new AutoResetEvent(false);
 
@@ -1115,6 +1171,8 @@ namespace MatterHackers.GuiAutomation
 			int testTimeout = (int)(1000 * secondsToTestFailure);
 			var timer = Stopwatch.StartNew();
 
+			bool testTimedOut = false;
+
 			// Start two tasks, the timeout and the test method. Block in the test method until the first draw
 			Task<Task> task = Task.WhenAny(
 				Task.Delay(testTimeout),
@@ -1126,10 +1184,11 @@ namespace MatterHackers.GuiAutomation
 					return testMethod(testRunner);
 				}));
 
-			// Once either the timeout or the test method has completed, reassign the task/result for timeout errors and shutdown the SystemWindow
-			task.ContinueWith((innerTask) =>
+			// Once either the timeout or the test method has completed, store if a timeout occurred and shutdown the SystemWindow
+			task.ContinueWith(innerTask =>
 			{
 				long elapsedTime = timer.ElapsedMilliseconds;
+				testTimedOut = elapsedTime >= testTimeout;
 
 				// Invoke the callers close implementation or fall back to CloseOnIdle
 				if (closeWindow != null)
@@ -1140,25 +1199,22 @@ namespace MatterHackers.GuiAutomation
 				{
 					initialSystemWindow.CloseOnIdle();
 				}
-
-				// Create an exception Task for test timeouts
-				if (elapsedTime >= testTimeout)
-				{
-					// Wait for CloseOnIdle to complete
-					testRunner.WaitFor(() => initialSystemWindow.HasBeenClosed);
-
-					task = new Task<Task>(() => throw new TimeoutException("TestMethod timed out"));
-					task.RunSynchronously();
-				}
 			});
 
 			// Main thread blocks here until released via CloseOnIdle above
 			initialSystemWindow.ShowAsSystemWindow();
 
+			// Wait for CloseOnIdle to complete
+			testRunner.WaitFor(() => initialSystemWindow.HasBeenClosed);
+
+			if (testTimedOut)
+			{
+				// Throw an exception for test timeouts
+				throw new TimeoutException("TestMethod timed out");
+			}
+
 			// After the system window is closed return the task and any exception to the calling context
 			return task?.Result ?? Task.CompletedTask;
 		}
-
-		#endregion
 	}
 }

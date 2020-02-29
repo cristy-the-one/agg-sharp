@@ -72,10 +72,12 @@ namespace MatterHackers.Agg.UI
 		public class UpdateEvent
 		{
 			public double SecondsPassed { get; internal set; }
+
 			public bool ShouldDraw { get; set; } = true;
 		}
 
-		public EventHandler<UpdateEvent> Update;
+		public event EventHandler<UpdateEvent> Update;
+
 		private bool haveDrawn = false;
 		private long lastTimeMs;
 		private RunningInterval runningInterval;
@@ -91,7 +93,7 @@ namespace MatterHackers.Agg.UI
 			set => SecondsPerUpdate = 1.0 / value;
 		}
 
-		public bool IsRunning => runningInterval != null && runningInterval.Continue;
+		public bool IsRunning { get; set; }
 
 		#region MaxUpdatesPerDraw
 
@@ -156,13 +158,15 @@ namespace MatterHackers.Agg.UI
 		{
 			// check twice as often as we need to make sure we don't mis our update by too much
 			runningInterval = UiThread.SetInterval(this.ProcessElapsedTime, this.SecondsPerUpdate / 2);
+			this.IsRunning = true;
 		}
 
 		public void Stop()
 		{
 			if (runningInterval != null)
 			{
-				runningInterval.Continue = false;
+				this.IsRunning = false;
+				UiThread.ClearInterval(runningInterval);
 			}
 		}
 

@@ -54,7 +54,7 @@ namespace MatterHackers.Agg.UI
 			get => Printer.TypeFaceStyle.EmSizeInPoints / GuiWidget.DeviceScale;
 			set
 			{
-				Printer.TypeFaceStyle = new StyledTypeFace(Printer.TypeFaceStyle.TypeFace, value * GuiWidget.DeviceScale, Printer.TypeFaceStyle.DoUnderline, Printer.TypeFaceStyle.FlatenCurves);
+				Printer.TypeFaceStyle = new StyledTypeFace(Printer.TypeFaceStyle.TypeFace, value * GuiWidget.DeviceScale, Printer.TypeFaceStyle.DoUnderline, Printer.TypeFaceStyle.FlattenCurves);
 
 				if (AutoExpandBoundsToText)
 				{
@@ -68,13 +68,14 @@ namespace MatterHackers.Agg.UI
 		public TypeFacePrinter Printer { get; private set; }
 
 		/// <summary>
+		/// Gets or sets a value indicating whether to show the text in bold.
 		/// This function only works if the TypeFace you are using is LiberationSans. Otherwise it has no effect.
 		/// </summary>
 		public bool Bold
 		{
 			get
 			{
-				if(Printer.TypeFaceStyle.TypeFace == LiberationSansBoldFont.Instance)
+				if (Printer.TypeFaceStyle.TypeFace == LiberationSansBoldFont.Instance)
 				{
 					return true;
 				}
@@ -86,16 +87,16 @@ namespace MatterHackers.Agg.UI
 			{
 				if (Printer.TypeFaceStyle.TypeFace == LiberationSansBoldFont.Instance)
 				{
-					StyledTypeFace typeFaceStyle = new StyledTypeFace(LiberationSansFont.Instance, Printer.TypeFaceStyle.EmSizeInPoints, Printer.TypeFaceStyle.DoUnderline);
+					var typeFaceStyle = new StyledTypeFace(LiberationSansFont.Instance, Printer.TypeFaceStyle.EmSizeInPoints, Printer.TypeFaceStyle.DoUnderline);
 					Printer = new TypeFacePrinter(Text, typeFaceStyle, justification: Printer.Justification);
 					if (AutoExpandBoundsToText)
 					{
 						DoExpandBoundsToText();
 					}
 				}
-				else if(Printer.TypeFaceStyle.TypeFace == LiberationSansFont.Instance)
+				else if (Printer.TypeFaceStyle.TypeFace == LiberationSansFont.Instance)
 				{
-					StyledTypeFace typeFaceStyle = new StyledTypeFace(LiberationSansBoldFont.Instance, Printer.TypeFaceStyle.EmSizeInPoints, Printer.TypeFaceStyle.DoUnderline);
+					var typeFaceStyle = new StyledTypeFace(LiberationSansBoldFont.Instance, Printer.TypeFaceStyle.EmSizeInPoints, Printer.TypeFaceStyle.DoUnderline);
 					Printer = new TypeFacePrinter(Text, typeFaceStyle, justification: Printer.Justification);
 					if (AutoExpandBoundsToText)
 					{
@@ -105,7 +106,7 @@ namespace MatterHackers.Agg.UI
 			}
 		}
 
-		public TextWidget(string text, double x = 0, double y = 0, double pointSize = 12, Justification justification = Justification.Left, Color textColor = new Color(), bool ellipsisIfClipped = true, bool underline = false, Color backgroundColor = new Color(), TypeFace typeFace = null, bool bold = false)
+		public TextWidget(string text, double x = 0, double y = 0, double pointSize = 12, Justification justification = Justification.Left, Color textColor = default(Color), bool ellipsisIfClipped = true, bool underline = false, Color backgroundColor = default(Color), TypeFace typeFace = null, bool bold = false)
 		{
 			disabledColor = new Color(textColor, 50);
 
@@ -120,6 +121,7 @@ namespace MatterHackers.Agg.UI
 				// we assume it is the default if alpha 0.  Also there is no reason to make a text color of this as it will draw nothing.
 				this.textColor = Color.Black;
 			}
+
 			if (backgroundColor.Alpha0To255 != 0)
 			{
 				BackgroundColor = backgroundColor;
@@ -129,14 +131,18 @@ namespace MatterHackers.Agg.UI
 
 			if (typeFace == null)
 			{
-				typeFace = (bold) ? LiberationSansBoldFont.Instance : LiberationSansFont.Instance;
+				typeFace = bold ? LiberationSansBoldFont.Instance : LiberationSansFont.Instance;
 			}
-			StyledTypeFace typeFaceStyle = new StyledTypeFace(typeFace, pointSize * GuiWidget.DeviceScale, underline);
+
+			var typeFaceStyle = new StyledTypeFace(typeFace, pointSize * GuiWidget.DeviceScale, underline);
 			Printer = new TypeFacePrinter(text, typeFaceStyle, justification: justification);
 
-			LocalBounds = Printer.LocalBounds;
+			if (text != null)
+			{
+				LocalBounds = Printer.LocalBounds;
 
-			MinimumSize = new Vector2(0, LocalBounds.Height);
+				MinimumSize = new Vector2(0, LocalBounds.Height);
+			}
 		}
 
 		public override RectangleDouble LocalBounds
@@ -164,6 +170,7 @@ namespace MatterHackers.Agg.UI
 		public bool StrikeThrough { get; set; }
 
 		private bool _underline = false;
+
 		public bool Underline
 		{
 			get => _underline;
@@ -219,7 +226,7 @@ namespace MatterHackers.Agg.UI
 				{
 					convertedText = value.Replace("\r\n", "\n");
 					convertedText = convertedText.Replace('\r', '\n');
-					if (Text.Contains("\r"))
+					if (convertedText.Contains("\r"))
 					{
 						throw new Exception("These should have be converted to \n.");
 					}
@@ -230,18 +237,21 @@ namespace MatterHackers.Agg.UI
 					base.Text = convertedText;
 					bool wasUsingHintedCache = Printer.DrawFromHintedCache;
 					// Text may have been changed by a call back be sure to use what we really have set
-					Printer = new TypeFacePrinter(base.Text, Printer.TypeFaceStyle, justification: Printer.Justification);
-					Printer.DrawFromHintedCache = wasUsingHintedCache;
+					Printer = new TypeFacePrinter(base.Text, Printer.TypeFaceStyle, justification: Printer.Justification)
+					{
+						DrawFromHintedCache = wasUsingHintedCache
+					};
 					if (AutoExpandBoundsToText)
 					{
 						DoExpandBoundsToText();
 					}
+
 					Invalidate();
 				}
 			}
 		}
 
-		private char[] spaceTrim = { ' ' };
+		private readonly char[] spaceTrim = { ' ' };
 
 		public override void OnDraw(Graphics2D graphics2D)
 		{
@@ -271,6 +281,7 @@ namespace MatterHackers.Agg.UI
 				default:
 					throw new NotImplementedException();
 			}
+
 			graphics2D.SetTransform(graphics2D.GetTransform() * Affine.NewTranslation(xOffsetForText, yOffsetForText));
 
 			if (this.EllipsisActive) // only do this if it's static text
@@ -281,6 +292,7 @@ namespace MatterHackers.Agg.UI
 				{
 					shortTextPrinter = new TypeFacePrinter(shortTextPrinter.Text.Substring(0, shortTextPrinter.Text.Length - 4).TrimEnd(spaceTrim) + "...", Printer);
 				}
+
 				shortTextPrinter.Render(graphics2D, this.TextColor);
 			}
 			else
@@ -324,7 +336,7 @@ namespace MatterHackers.Agg.UI
 
 		public Color TextColor
 		{
-			get => (this.Enabled) ? textColor : this.disabledColor;
+			get => this.Enabled ? textColor : this.disabledColor;
 			set
 			{
 				if (textColor != value)

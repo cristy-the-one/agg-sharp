@@ -138,7 +138,7 @@ namespace MatterHackers.Csg
 		public Vector3 GetCenter()
 		{
 			AxisAlignedBoundingBox bounds = GetAxisAlignedBoundingBox();
-			return new Vector3((bounds.maxXYZ + bounds.minXYZ) / 2);
+			return new Vector3((bounds.MaxXYZ + bounds.MinXYZ) / 2);
 		}
 
 		#region Size Functions
@@ -149,9 +149,9 @@ namespace MatterHackers.Csg
 			{
 				AxisAlignedBoundingBox bounds = GetAxisAlignedBoundingBox();
 				return new Vector3(
-					bounds.maxXYZ.X - bounds.minXYZ.X,
-					bounds.maxXYZ.Y - bounds.minXYZ.Y,
-					bounds.maxXYZ.Z - bounds.minXYZ.Z);
+					bounds.MaxXYZ.X - bounds.MinXYZ.X,
+					bounds.MaxXYZ.Y - bounds.MinXYZ.Y,
+					bounds.MaxXYZ.Z - bounds.MinXYZ.Z);
 			}
 
 			set
@@ -235,8 +235,8 @@ namespace MatterHackers.Csg
 		#region Static Functions
 
 		/// <summary>
-		/// Normaly ObjectCSG tree can be dirrected acyclic graphs and have instances appear more than once in the tree.
-		/// This function will ensure that that every Object is a unique instance in the structure.
+		/// Normally ObjectCSG tree can be directed acyclic graphs and have instances appear more than once in the tree.
+		/// This function will ensure that every Object is a unique instance in the structure.
 		/// </summary>
 		/// <param name="dagRoot"></param>
 		/// <returns>A new ObjectCSG root that is a new tree of all the objects in the original tree.</returns>
@@ -282,7 +282,7 @@ namespace MatterHackers.Csg
 			return oppositeFace;
 		}
 
-		#region Structure Optomizations
+		#region Structure Optimizations
 
 		public void OptomizeTransforms()
 		{

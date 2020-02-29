@@ -102,6 +102,8 @@ namespace MatterHackers.MeshVisualizer
 
 		private int volumeIndexWithMouseDown = -1;
 
+		private Color accentColor = Color.Blue;
+
 		public MeshViewerWidget(Vector3 displayVolume, Vector2 bedCenter, BedShape bedShape, string startingTextMessage = "")
 		{
 			Scene.SelectionChanged += (sender, e) =>
@@ -131,7 +133,7 @@ namespace MatterHackers.MeshVisualizer
 			labelContainer.AddChild(partProcessingInfo);
 			labelContainer.Selectable = false;
 
-			SetMaterialColor(1, ActiveTheme.Instance.PrimaryAccentColor);
+			SetMaterialColor(1, accentColor);
 
 			this.AddChild(labelContainer);
 		}
@@ -166,7 +168,7 @@ namespace MatterHackers.MeshVisualizer
 			base.OnLoad(args);
 		}
 
-		public override void FindNamedChildrenRecursive(string nameToSearchFor, List<WidgetAndPosition> foundChildren, RectangleDouble touchingBounds, SearchType seachType, bool allowInvalidItems = true)
+		public override List<WidgetAndPosition> FindDescendants(IEnumerable<string> namesToSearchFor, List<WidgetAndPosition> foundChildren, RectangleDouble touchingBounds, SearchType seachType, bool allowInvalidItems = true)
 		{
 			foreach (var child in Scene.Children)
 			{
@@ -178,19 +180,22 @@ namespace MatterHackers.MeshVisualizer
 
 				bool nameFound = false;
 
-				if (seachType == SearchType.Exact)
+				foreach (var nameToSearchFor in namesToSearchFor)
 				{
-					if (object3DName == nameToSearchFor)
+					if (seachType == SearchType.Exact)
 					{
-						nameFound = true;
+						if (object3DName == nameToSearchFor)
+						{
+							nameFound = true;
+						}
 					}
-				}
-				else
-				{
-					if (nameToSearchFor == ""
-						|| object3DName.Contains(nameToSearchFor))
+					else
 					{
-						nameFound = true;
+						if (nameToSearchFor == ""
+							|| object3DName.Contains(nameToSearchFor))
+						{
+							nameFound = true;
+						}
 					}
 				}
 
@@ -216,7 +221,7 @@ namespace MatterHackers.MeshVisualizer
 				}
 			}
 
-			base.FindNamedChildrenRecursive(nameToSearchFor, foundChildren, touchingBounds, seachType, allowInvalidItems);
+			return base.FindDescendants(namesToSearchFor, foundChildren, touchingBounds, seachType, allowInvalidItems);
 		}
 
 		public InteractiveScene Scene { get; } = new InteractiveScene();
@@ -349,45 +354,47 @@ namespace MatterHackers.MeshVisualizer
 					if (displayVolumeToBuild.Z > 0)
 					{
 						buildVolume = PlatonicSolids.CreateCube(displayVolumeToBuild);
-						foreach (Vertex vertex in buildVolume.Vertices)
+						for (int i = 0; i < buildVolume.Vertices.Count; i++)
 						{
-							vertex.Position = vertex.Position + new Vector3(0, 0, displayVolumeToBuild.Z / 2);
+							buildVolume.Vertices[i] = buildVolume.Vertices[i] + new Vector3Float(0, 0, displayVolumeToBuild.Z / 2);
 						}
+						var bspTree = FaceBspTree.Create(buildVolume);
+						buildVolume.FaceBspTree = bspTree;
 					}
-					CreateRectangularBedGridImage(displayVolumeToBuild, bedCenter, divisor, skip);
+
 					printerBed = PlatonicSolids.CreateCube(displayVolumeToBuild.X, displayVolumeToBuild.Y, 1.8);
 					{
-						Face face = printerBed.Faces[0];
-						MeshHelper.PlaceTextureOnFace(face, BedImage);
+						printerBed.PlaceTextureOnFace(0, BedImage);
 					}
 					break;
 
 				case BedShape.Circular:
 					{
-						if (displayVolumeToBuild.Z > 0)
-						{
-							buildVolume = VertexSourceToMesh.Extrude(new Ellipse(new Vector2(), displayVolumeToBuild.X / 2, displayVolumeToBuild.Y / 2), displayVolumeToBuild.Z);
-							foreach (Vertex vertex in buildVolume.Vertices)
-							{
-								vertex.Position = vertex.Position + new Vector3(0, 0, .2);
-							}
-						}
-						CreateCircularBedGridImage((int)(displayVolumeToBuild.X / divisor), (int)(displayVolumeToBuild.Y / divisor), skip);
-						printerBed = VertexSourceToMesh.Extrude(new Ellipse(new Vector2(), displayVolumeToBuild.X / 2, displayVolumeToBuild.Y / 2), 2);
-						{
-							foreach (Face face in printerBed.Faces)
-							{
-								if (face.Normal.Z > 0)
-								{
-									face.SetTexture(0, BedImage);
-									foreach (FaceEdge faceEdge in face.FaceEdges())
-									{
-										faceEdge.SetUv(0, new Vector2((displayVolumeToBuild.X / 2 + faceEdge.FirstVertex.Position.X) / displayVolumeToBuild.X,
-											(displayVolumeToBuild.Y / 2 + faceEdge.FirstVertex.Position.Y) / displayVolumeToBuild.Y));
-									}
-								}
-							}
-						}
+						throw new NotImplementedException();
+						//if (displayVolumeToBuild.Z > 0)
+						//{
+						//	buildVolume = VertexSourceToMesh.Extrude(new Ellipse(new Vector2(), displayVolumeToBuild.X / 2, displayVolumeToBuild.Y / 2), displayVolumeToBuild.Z);
+						//	foreach (Vertex vertex in buildVolume.Vertices)
+						//	{
+						//		vertex.Position = vertex.Position + new Vector3(0, 0, .2);
+						//	}
+						//}
+						//CreateCircularBedGridImage((int)(displayVolumeToBuild.X / divisor), (int)(displayVolumeToBuild.Y / divisor), skip);
+						//printerBed = VertexSourceToMesh.Extrude(new Ellipse(new Vector2(), displayVolumeToBuild.X / 2, displayVolumeToBuild.Y / 2), 2);
+						//{
+						//	foreach (Face face in printerBed.Faces)
+						//	{
+						//		if (face.Normal.Z > 0)
+						//		{
+						//			face.SetTexture(0, BedImage);
+						//			foreach (FaceEdge faceEdge in face.FaceEdges())
+						//			{
+						//				faceEdge.SetUv(0, new Vector2((displayVolumeToBuild.X / 2 + faceEdge.FirstVertex.Position.X) / displayVolumeToBuild.X,
+						//					(displayVolumeToBuild.Y / 2 + faceEdge.FirstVertex.Position.Y) / displayVolumeToBuild.Y));
+						//			}
+						//		}
+						//	}
+						//}
 					}
 					break;
 
@@ -395,16 +402,17 @@ namespace MatterHackers.MeshVisualizer
 					throw new NotImplementedException();
 			}
 
-			foreach (Vertex vertex in printerBed.Vertices)
+			var zTop = printerBed.GetAxisAlignedBoundingBox().MaxXYZ.Z;
+			for (int i = 0; i < printerBed.Vertices.Count; i++)
 			{
-				vertex.Position = vertex.Position - new Vector3(-bedCenter, 2.2);
+				printerBed.Vertices[i] = printerBed.Vertices[i] - new Vector3Float(-bedCenter, zTop + .02);
 			}
 
 			if (buildVolume != null)
 			{
-				foreach (Vertex vertex in buildVolume.Vertices)
+				for (int i = 0; i < buildVolume.Vertices.Count; i++)
 				{
-					vertex.Position = vertex.Position - new Vector3(-bedCenter, 2.2);
+					buildVolume.Vertices[i] = buildVolume.Vertices[i] - new Vector3Float(-bedCenter, zTop + .02);
 				}
 			}
 
@@ -518,7 +526,7 @@ namespace MatterHackers.MeshVisualizer
 			Ray ray = this.World.GetRayForLocalBounds(mouseEvent.Position);
 			IntersectInfo info;
 			if (this.Scene.SelectedItem != null
-				&& !SuppressUiVolumes 
+				&& !SuppressUiVolumes
 				&& FindInteractionVolumeHit(ray, out volumeHitIndex, out info))
 			{
 				MouseEvent3DArgs mouseEvent3D = new MouseEvent3DArgs(mouseEvent, ray, info);

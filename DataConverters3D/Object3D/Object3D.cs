@@ -32,7 +32,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Text;
+using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using MatterHackers.Agg;
@@ -57,7 +57,7 @@ namespace MatterHackers.DataConverters3D
 		public static Mesh FileMissingMesh { get; set; }
 
 		public Object3D()
-			: this (null)
+			: this(null)
 		{
 		}
 
@@ -80,20 +80,46 @@ namespace MatterHackers.DataConverters3D
 			}
 		}
 
+		private void Children_ItemsModified(object sender, System.EventArgs e)
+		{
+			Invalidate(InvalidateType.Children);
+		}
+
 		public string ID { get; set; } = Guid.NewGuid().ToString();
 
 		public string OwnerID { get; set; }
 
-		public SafeList<IObject3D> Children { get; set; }
+		public SafeList<IObject3D> Children
+		{
+			get => _children;
+			set
+			{
+				if (value != _children)
+				{
+					if (_children != null)
+					{
+						_children.ItemsModified -= Children_ItemsModified;
+					}
+
+					_children = value;
+					_children.ItemsModified += Children_ItemsModified;
+				}
+			}
+		}
 
 		public string TypeName { get; }
 
 		public IObject3D Parent { get; set; }
 
 		private Color _color = Color.Transparent;
+
 		public Color Color
 		{
-			get { return _color; }
+			get
+			{
+				return _color;
+			}
+
 			set
 			{
 				if (_color != value)
@@ -104,7 +130,7 @@ namespace MatterHackers.DataConverters3D
 						EnsureTransparentSorting();
 					}
 
-					Invalidate(new InvalidateArgs(this, InvalidateType.Color, null));
+					Invalidate(InvalidateType.Color);
 				}
 			}
 		}
@@ -129,29 +155,33 @@ namespace MatterHackers.DataConverters3D
 		}
 
 		private int _materialIndex = -1;
+
 		public int MaterialIndex
 		{
 			get
 			{
 				return _materialIndex;
 			}
+
 			set
 			{
 				if (value != _materialIndex)
 				{
 					_materialIndex = value;
-					Invalidate(new InvalidateArgs(this, InvalidateType.Material, null));
+					Invalidate(InvalidateType.Material);
 				}
 			}
 		}
 
 		private PrintOutputTypes _outputType = PrintOutputTypes.Default;
+
 		public PrintOutputTypes OutputType
 		{
 			get
 			{
 				return _outputType;
 			}
+
 			set
 			{
 				if (_outputType != value)
@@ -170,20 +200,34 @@ namespace MatterHackers.DataConverters3D
 							UiThread.RunOnIdle(() => localMesh.FaceBspTree = bspTree);
 						});
 					}
+
+					Invalidate(InvalidateType.OutputType);
 				}
 			}
 		}
 
 		private Matrix4X4 _matrix = Matrix4X4.Identity;
+
 		public virtual Matrix4X4 Matrix
 		{
 			get => _matrix;
 			set
 			{
-				if(value != _matrix)
+				if (value != _matrix)
 				{
+#if DEBUG
+					foreach (var element in value.GetAsDoubleArray())
+					{
+						if (double.IsNaN(element)
+							|| double.IsInfinity(element))
+						{
+							throw new InvalidDataException("Setting an invalid Matrix. You probably should not be considering some part of the data that lead to this set.");
+						}
+					}
+#endif
+
 					_matrix = value;
-					Invalidate(new InvalidateArgs(this, InvalidateType.Matrix, null));
+					Invalidate(InvalidateType.Matrix);
 				}
 			}
 		}
@@ -192,6 +236,7 @@ namespace MatterHackers.DataConverters3D
 
 		[JsonIgnore]
 		private Mesh _mesh;
+
 		public virtual Mesh Mesh
 		{
 			get => _mesh;
@@ -205,9 +250,7 @@ namespace MatterHackers.DataConverters3D
 						traceData = null;
 						this.MeshPath = null;
 
-						Invalidate(new InvalidateArgs(this, InvalidateType.Mesh, null));
-
-						AsyncCleanAndMerge();
+						Invalidate(InvalidateType.Mesh);
 					}
 				}
 			}
@@ -220,73 +263,46 @@ namespace MatterHackers.DataConverters3D
 			{
 				return this.DescendantsAndSelf().Where((i) =>
 				{
-					if(i is Object3D object3D)
+					if (i is Object3D object3D)
 					{
 						return object3D.RebuildLockCount > 0;
 					}
+
 					return false;
 				}).Any();
 			}
 		}
 
-		private void AsyncCleanAndMerge()
-		{
-			return;
-			var mesh = Mesh;
-			// keep track of the mesh we are copying
-			if (mesh != null
-				&& mesh.Vertices != null
-				&& !mesh.Vertices.Sorted)
-			{
-				var rebuildLock = RebuildLock();
-
-				Task.Run(() =>
-				{
-					var meshThatWasCopied = mesh;
-					// make the copy
-					var copyMesh = meshThatWasCopied.Copy(CancellationToken.None);
-					// clean the copy
-					copyMesh.CleanAndMergeMesh(CancellationToken.None);
-
-					lock (locker)
-					{
-						// if we have not changed to a new mesh (they are still the same)
-						if (meshThatWasCopied == Mesh)
-						{
-							// store the new clean mesh
-							_mesh = copyMesh;
-							UiThread.RunOnIdle(() =>
-							{
-								rebuildLock.Dispose();
-								this.Invalidate(new InvalidateArgs(this, InvalidateType.Mesh, null));
-							});
-						}
-						else // we still need to resume the building
-						{
-							UiThread.RunOnIdle(() =>
-							{
-								rebuildLock.Dispose();
-							});
-						}
-					}
-				});
-			}
-		}
-
 		public string MeshPath { get; set; }
 
-		public string Name { get; set; }
+		private string _name = "";
+
+		public string Name
+		{
+			get => _name;
+			set
+			{
+				if (value != _name)
+				{
+					_name = value;
+					Invalidate(InvalidateType.Name);
+				}
+			}
+		}
 
 		[JsonIgnore]
 		public virtual bool Persistable { get; set; } = true;
 
 		public virtual bool Visible { get; set; } = true;
 
-		public virtual bool CanApply => false;
+		public virtual bool CanFlatten => false;
+
 		public virtual bool CanEdit => this.HasChildren();
 
 		[JsonIgnore]
 		internal int RebuildLockCount { get; set; }
+
+		public bool Expanded { get; set; }
 
 		private class Object3DRebuildLock : RebuildLock
 		{
@@ -304,14 +320,14 @@ namespace MatterHackers.DataConverters3D
 				if (item is Object3D object3D)
 				{
 					object3D.RebuildLockCount--;
-					item.DebugDepth($"Decrease Lock Count {object3D.RebuildLockCount}");
+					// item.DebugDepth($"Decrease Lock Count {object3D.RebuildLockCount}");
 				}
 			}
 		}
 
 		public RebuildLock RebuildLock()
 		{
-			this.DebugDepth($"Increase Lock Count {RebuildLockCount}");
+			// this.DebugDepth($"Increase Lock Count {RebuildLockCount}");
 			return new Object3DRebuildLock(this);
 		}
 
@@ -327,10 +343,8 @@ namespace MatterHackers.DataConverters3D
 				cacheContext = new CacheContext();
 			}
 
-			IObject3D loadedItem;
-
 			// Try to pull the item from cache
-			if (!cacheContext.Items.TryGetValue(filePath, out loadedItem) || loadedItem == null)
+			if (!cacheContext.Items.TryGetValue(filePath, out IObject3D loadedItem) || loadedItem == null)
 			{
 				using (var stream = File.OpenRead(filePath))
 				{
@@ -354,6 +368,15 @@ namespace MatterHackers.DataConverters3D
 			}
 
 			return loadedItem;
+		}
+
+		[OnDeserialized]
+		public void OnDeserialized(StreamingContext context)
+		{
+			if (!this.Matrix.IsValid())
+			{
+				this.Matrix = Matrix4X4.Identity;
+			}
 		}
 
 		public static IObject3D Load(Stream stream, string extension, CancellationToken cancellationToken, CacheContext cacheContext = null, Action<double, string> progress = null)
@@ -410,12 +433,12 @@ namespace MatterHackers.DataConverters3D
 				switch (Path.GetExtension(meshPathAndFileName).ToUpper())
 				{
 					// TODO: Consider if save to MCX is needed or if existing patterns already cover that case
-					//case ".MCX":
-					//	using (var outstream = File.OpenWrite(meshPathAndFileName))
-					//	{
-					//		item.SaveTo(outstream, reportProgress);
-					//	}
-					//	return true;
+					// case ".MCX":
+					// using (var outstream = File.OpenWrite(meshPathAndFileName))
+					// {
+					// item.SaveTo(outstream, reportProgress);
+					// }
+					// return true;
 
 					case ".STL":
 						Mesh mesh = DoMergeAndTransform(item, outputInfo, cancellationToken);
@@ -451,7 +474,7 @@ namespace MatterHackers.DataConverters3D
 				}
 			}
 
-			Mesh allPolygons = new Mesh();
+			var allPolygons = new Mesh();
 
 			foreach (var rawItem in visibleMeshes)
 			{
@@ -481,28 +504,58 @@ namespace MatterHackers.DataConverters3D
 				if (_mesh != mesh)
 				{
 					_mesh = mesh;
-					AsyncCleanAndMerge();
+					this.OnMeshAssigned();
 				}
 			}
 		}
 
-		public virtual void OnInvalidate(InvalidateArgs invalidateType)
+		protected virtual void OnMeshAssigned()
 		{
-			Invalidated?.Invoke(this, invalidateType);
-
-			if (Parent != null)
-			{
-				Parent.Invalidate(invalidateType);
-			}
 		}
 
-		public void Invalidate(InvalidateArgs invalidateType)
+		public virtual void OnInvalidate(InvalidateArgs invalidateType)
+		{
+			this.Invalidated?.Invoke(this, invalidateType);
+			this.Parent?.Invalidate(invalidateType);
+		}
+
+		public virtual Task Rebuild()
+		{
+			return Task.CompletedTask;
+		}
+
+		public void Invalidate(InvalidateType invalidateType)
+		{
+			this.Invalidate(new InvalidateArgs(this, invalidateType));
+		}
+
+		public void Invalidate(InvalidateArgs invalidateArgs)
 		{
 			if (!RebuildLocked)
 			{
-				this.OnInvalidate(invalidateType);
+				this.OnInvalidate(invalidateArgs);
+			}
+			else
+			{
+				RunningInterval runningInterval = null;
+				void RebuildWhenUnlocked()
+				{
+					if (!RebuildLocked)
+					{
+						UiThread.ClearInterval(runningInterval);
+						this.OnInvalidate(invalidateArgs);
+					}
+				}
+
+				if (invalidateArgs.InvalidateType.HasFlag(InvalidateType.Properties)
+					&& invalidateArgs.Source == this)
+				{
+					// we need to get back to the user requested change when not locked
+					runningInterval = UiThread.SetInterval(RebuildWhenUnlocked, .2);
+				}
 			}
 		}
+
 		public const BindingFlags OwnedPropertiesOnly = BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 
 		public static IEnumerable<PropertyInfo> GetChildSelectorPropreties(IObject3D item)
@@ -510,124 +563,179 @@ namespace MatterHackers.DataConverters3D
 			return item.GetType().GetProperties(OwnedPropertiesOnly)
 				.Where((pi) =>
 				{
-					return pi.PropertyType == typeof(ChildrenSelector);
+					return pi.PropertyType == typeof(SelectedChildren);
 				});
 		}
 
 		// Deep clone via json serialization
 		public IObject3D Clone()
 		{
-			var rebuildLock = this.RebuilLockAll();
-			var originalParent = this.Parent;
-
-			// Index items by ID
-			// but make sure we don't blow up if we find duplicate ids (had bad data that did this)
-			var allItemsByID = this.DescendantsAndSelf()
-				.GroupBy(p => p.ID, StringComparer.OrdinalIgnoreCase)
-				.ToDictionary(g => g.Key, g => g.First());
-
 			IObject3D clonedItem;
 
-			using (var memoryStream = new MemoryStream())
-			using (var writer = new StreamWriter(memoryStream))
+			using (this.RebuilLockAll())
 			{
-				// Wrap with a temporary container
-				var wrapper = new Object3D();
-				wrapper.Children.Add(this);
+				var originalParent = this.Parent;
 
-				// Push json into stream and reset to start
-				writer.Write(JsonConvert.SerializeObject(wrapper, Formatting.Indented));
-				writer.Flush();
-				memoryStream.Position = 0;
+				Dictionary<string, IObject3D> allItemsByID;
 
-				// Load serialized content
-				var roundTripped = Object3D.Load(memoryStream, ".mcx", CancellationToken.None);
-
-				// Remove temp container
-				clonedItem = roundTripped.Children.First();
-			}
-
-			var cloneLocks = clonedItem.RebuilLockAll();
-			Dictionary<string, string> idRemaping = new Dictionary<string, string>();
-			// Copy mesh instances to cloned tree
-			foreach (var descendant in clonedItem.DescendantsAndSelf())
-			{
-				descendant.SetMeshDirect(allItemsByID[descendant.ID].Mesh);
-
-				// store the original id
-				string originalId = descendant.ID;
-				// update it to a new ID
-				descendant.ID = Guid.NewGuid().ToString();
-				// Now OwnerID must be reprocessed after changing ID to ensure consistency
-				foreach (var child in descendant.DescendantsAndSelf().Where((c) => c.OwnerID == originalId))
+				try
 				{
-					child.OwnerID = descendant.ID;
+					// Index items by ID
+					allItemsByID = this.DescendantsAndSelf().ToDictionary(i => i.ID);
+				}
+				catch
+				{
+					throw new Exception("Error cloning item due to duplicate identifiers");
 				}
 
-				if (!idRemaping.ContainsKey(originalId))
+				using (var memoryStream = new MemoryStream())
+				using (var writer = new StreamWriter(memoryStream))
 				{
-					idRemaping.Add(originalId, descendant.ID);
+					// Wrap with a temporary container
+					var wrapper = new Object3D();
+					wrapper.Children.Add(this);
+
+					// Push json into stream and reset to start
+					writer.Write(JsonConvert.SerializeObject(wrapper, Formatting.Indented));
+					writer.Flush();
+					memoryStream.Position = 0;
+
+					// Load serialized content
+					var roundTripped = Object3D.Load(memoryStream, ".mcx", CancellationToken.None);
+
+					// Remove temp container
+					clonedItem = roundTripped.Children.First();
 				}
-			}
 
-			// Clean up any child references in the objects
-			foreach (var descendant in clonedItem.DescendantsAndSelf())
-			{
-				// find all ObjecIdListAttributes and update them
-				foreach (var property in GetChildSelectorPropreties(descendant))
+				using (clonedItem.RebuilLockAll())
 				{
-					var newChildrenSelector = new ChildrenSelector();
-					bool foundReplacement = false;
-
-					// sync ids
-					foreach (var id in (ChildrenSelector)property.GetGetMethod().Invoke(descendant, null))
+					var idRemaping = new Dictionary<string, string>();
+					// Copy mesh instances to cloned tree
+					foreach (var descendant in clonedItem.DescendantsAndSelf())
 					{
-						// update old id to new id
-						if (idRemaping.ContainsKey(id))
+						descendant.SetMeshDirect(allItemsByID[descendant.ID].Mesh);
+
+						// store the original id
+						string originalId = descendant.ID;
+						// update it to a new ID
+						descendant.ID = Guid.NewGuid().ToString();
+						// Now OwnerID must be reprocessed after changing ID to ensure consistency
+						foreach (var child in descendant.DescendantsAndSelf().Where((c) => c.OwnerID == originalId))
 						{
-							newChildrenSelector.Add(idRemaping[id]);
-							foundReplacement = true;
+							child.OwnerID = descendant.ID;
 						}
-						else
+
+						if (!idRemaping.ContainsKey(originalId))
 						{
-							// this really should never happen
-							newChildrenSelector.Add(id);
+							idRemaping.Add(originalId, descendant.ID);
 						}
 					}
 
-					if (foundReplacement)
+					// Clean up any child references in the objects
+					foreach (var descendant in clonedItem.DescendantsAndSelf())
 					{
-						property.GetSetMethod().Invoke(descendant, new[] { newChildrenSelector });
+						// find all ObjecIdListAttributes and update them
+						foreach (var property in GetChildSelectorPropreties(descendant))
+						{
+							var newChildrenSelector = new SelectedChildren();
+							bool foundReplacement = false;
+
+							// sync ids
+							foreach (var id in (SelectedChildren)property.GetGetMethod().Invoke(descendant, null))
+							{
+								// update old id to new id
+								if (idRemaping.ContainsKey(id))
+								{
+									newChildrenSelector.Add(idRemaping[id]);
+									foundReplacement = true;
+								}
+								else
+								{
+									// this really should never happen
+									newChildrenSelector.Add(id);
+								}
+							}
+
+							if (foundReplacement)
+							{
+								property.GetSetMethod().Invoke(descendant, new[] { newChildrenSelector });
+							}
+						}
 					}
+
+					// the cloned item does not have a parent
+					clonedItem.Parent = null;
 				}
+
+				// restore the parent
+				this.Parent = originalParent;
 			}
-			// the cloned item does not have a parent
-			clonedItem.Parent = null;
-			cloneLocks.ResumeAll();
-
-			// restore the parent
-			this.Parent = originalParent;
-
-			rebuildLock.ResumeAll();
 
 			return clonedItem;
 		}
 
 		public override string ToString()
 		{
+			var name = string.IsNullOrEmpty(Name) ? "" : $", '{Name}'";
 			if (Parent != null)
 			{
-				return $"{this.GetType().Name}, ID = {ID}, Parent = {Parent.ID}";
+				return $"{this.GetType().Name}{name}, ID = {ID}, Parent = {Parent.ID}";
 			}
 
-			return $"{this.GetType().Name}, ID = {ID}";
+			return $"{this.GetType().Name}{name}, ID = {ID}";
+		}
+
+		public virtual AxisAlignedBoundingBox GetAxisAlignedBoundingBox(Matrix4X4 matrix, Func<IObject3D, bool> considerItem)
+		{
+			var totalTransorm = this.Matrix * matrix;
+
+			var totalBounds = AxisAlignedBoundingBox.Empty();
+			// Set the initial bounding box to empty or the bounds of the objects MeshGroup
+			if (this.Mesh != null)
+			{
+				totalBounds = this.Mesh.GetAxisAlignedBoundingBox(totalTransorm);
+			}
+			else if (Children.Count > 0)
+			{
+				foreach (IObject3D child in Children)
+				{
+					if (child.Visible
+						&& considerItem(child))
+					{
+						AxisAlignedBoundingBox childBounds;
+						// Add the bounds of each child object
+						if (child is Object3D object3D)
+						{
+							childBounds = object3D.GetAxisAlignedBoundingBox(totalTransorm, considerItem);
+						}
+						else
+						{
+							childBounds = child.GetAxisAlignedBoundingBox(totalTransorm);
+						}
+
+						// Check if the child actually has any bounds
+						if (childBounds.XSize > 0)
+						{
+							totalBounds += childBounds;
+						}
+					}
+				}
+			}
+
+			// Make sure we have some data. Else return 0 bounds.
+			if (totalBounds.MinXYZ.X == double.PositiveInfinity)
+			{
+				totalBounds = AxisAlignedBoundingBox.Zero();
+			}
+
+			return totalBounds;
 		}
 
 		public virtual AxisAlignedBoundingBox GetAxisAlignedBoundingBox(Matrix4X4 matrix)
 		{
 			var totalTransorm = this.Matrix * matrix;
 
-			AxisAlignedBoundingBox totalBounds = AxisAlignedBoundingBox.Empty;
+			var totalBounds = AxisAlignedBoundingBox.Empty();
 			// Set the initial bounding box to empty or the bounds of the objects MeshGroup
 			if (this.Mesh != null)
 			{
@@ -651,9 +759,9 @@ namespace MatterHackers.DataConverters3D
 			}
 
 			// Make sure we have some data. Else return 0 bounds.
-			if (totalBounds.minXYZ.X == double.PositiveInfinity)
+			if (totalBounds.MinXYZ.X == double.PositiveInfinity)
 			{
-				return AxisAlignedBoundingBox.Zero;
+				totalBounds = AxisAlignedBoundingBox.Zero();
 			}
 
 			return totalBounds;
@@ -662,14 +770,15 @@ namespace MatterHackers.DataConverters3D
 		private IPrimitive traceData;
 
 		// Cache busting on child nodes
-		private long tracedHashCode = long.MinValue;
+		private ulong tracedHashCode = ulong.MinValue;
 		private bool buildingFaceBsp;
+		private SafeList<IObject3D> _children;
 
 		public IPrimitive TraceData()
 		{
 			var processingMesh = Mesh;
 			// Cache busting on child nodes
-			long hashCode = GetLongHashCode();
+			ulong hashCode = GetLongHashCode();
 
 			if (traceData == null || tracedHashCode != hashCode)
 			{
@@ -678,15 +787,14 @@ namespace MatterHackers.DataConverters3D
 				if (processingMesh != null)
 				{
 					// we have a mesh so don't recurse into children
-					object objectData;
-					processingMesh.PropertyBag.TryGetValue("MeshTraceData", out objectData);
-					IPrimitive meshTraceData = objectData as IPrimitive;
+					processingMesh.PropertyBag.TryGetValue("MeshTraceData", out object objectData);
+					var meshTraceData = objectData as IPrimitive;
 					if (meshTraceData == null
 						&& processingMesh.Faces.Count > 0)
 					{
 						// Get the trace data for the local mesh
 						// First create trace data that builds fast but traces slow
-						var simpleTraceData = processingMesh.CreateTraceData(0);
+						var simpleTraceData = processingMesh.CreateTraceData(null, Matrix4X4.Identity, 0);
 						if (simpleTraceData != null)
 						{
 							try
@@ -695,13 +803,13 @@ namespace MatterHackers.DataConverters3D
 							}
 							catch
 							{
-
 							}
 						}
+
 						traceables.Add(simpleTraceData);
 						// Then create trace data that traces fast but builds slow
-						//var completeTraceData = processingMesh.CreateTraceData(0);
-						//processingMesh.PropertyBag["MeshTraceData"] = completeTraceData;
+						// var completeTraceData = processingMesh.CreateTraceData(0);
+						// processingMesh.PropertyBag["MeshTraceData"] = completeTraceData;
 					}
 					else
 					{
@@ -730,49 +838,22 @@ namespace MatterHackers.DataConverters3D
 
 		// Hashcode for lists as proposed by Jon Skeet
 		// http://stackoverflow.com/questions/8094867/good-gethashcode-override-for-list-of-foo-objects-respecting-the-order
-		public long GetLongHashCode()
+		public ulong GetLongHashCode(ulong hash = 14695981039346656037)
 		{
-			long hash = 19;
+			hash = Matrix.GetLongHashCode(hash);
 
-			unchecked
+			if (Mesh != null)
 			{
-				hash = hash * 31 + Matrix.GetLongHashCode();
+				hash = Mesh.GetLongHashCode(hash);
+			}
 
-				if(Mesh != null)
-				{
-					hash = hash * 32 + Mesh.GetLongHashCode();
-				}
-
-				foreach (var child in Children)
-				{
-					// The children need to include their transforms
-					hash = hash * 31 + child.GetLongHashCode();
-				}
+			foreach (var child in Children)
+			{
+				// The children need to include their transforms
+				hash = child.GetLongHashCode(hash);
 			}
 
 			return hash;
-		}
-
-		public static string ComputeFileSHA1(string filePath)
-		{
-			using (var stream = new BufferedStream(File.OpenRead(filePath), 1200000))
-			{
-				return ComputeSHA1(stream);
-			}
-		}
-
-		public static string ComputeSHA1(Stream stream)
-		{
-			// var timer = Stopwatch.StartNew();
-
-			// Alternatively: MD5.Create(),  new SHA256Managed()
-			using (var sha1 = System.Security.Cryptography.SHA1.Create())
-			{
-				byte[] hash = sha1.ComputeHash(stream);
-				// Console.WriteLine("{0} {1} {2}", SHA1, timer.ElapsedMilliseconds, filePath);
-
-				return BitConverter.ToString(hash).Replace("-", String.Empty);
-			}
 		}
 
 		public string ToJson()
@@ -787,24 +868,54 @@ namespace MatterHackers.DataConverters3D
 				});
 		}
 
-		public virtual void Apply(UndoBuffer undoBuffer)
+		public virtual void Flatten(UndoBuffer undoBuffer)
 		{
 			using (RebuildLock())
 			{
-				List<IObject3D> newChildren = new List<IObject3D>();
+				var newChildren = new List<IObject3D>();
 				// push our matrix into a copy of our children
 				foreach (var child in this.Children)
 				{
 					var newChild = child.Clone();
 					newChildren.Add(newChild);
 					newChild.Matrix *= this.Matrix;
+					var flags = Object3DPropertyFlags.Visible;
+					if (this.Color.alpha != 0)
+					{
+						flags |= Object3DPropertyFlags.Color;
+					}
+
+					if (this.OutputType != PrintOutputTypes.Default)
+					{
+						flags |= Object3DPropertyFlags.OutputType;
+					}
+
+					if (this.MaterialIndex != -1)
+					{
+						flags |= Object3DPropertyFlags.MaterialIndex;
+					}
+
+					newChild.CopyProperties(this, flags);
 				}
 
 				// and replace us with the children
-				undoBuffer.AddAndDo(new ReplaceCommand(new List<IObject3D> { this }, newChildren));
+				var replaceCommand = new ReplaceCommand(new[] { this }, newChildren, false);
+				if (undoBuffer != null)
+				{
+					undoBuffer.AddAndDo(replaceCommand);
+				}
+				else
+				{
+					replaceCommand.Do();
+				}
+
+				foreach (var child in newChildren)
+				{
+					child.MakeNameNonColliding();
+				}
 			}
 
-			Invalidate(new InvalidateArgs(this, InvalidateType.Content, undoBuffer));
+			Invalidate(InvalidateType.Children);
 		}
 
 		public virtual void Remove(UndoBuffer undoBuffer)
@@ -829,7 +940,7 @@ namespace MatterHackers.DataConverters3D
 					}
 
 					// and replace us with the children
-					undoBuffer.AddAndDo(new ReplaceCommand(new List<IObject3D> { this }, newTree.Children.ToList()));
+					undoBuffer.AddAndDo(new ReplaceCommand(new[] { this }, newTree.Children.ToList(), false));
 				}
 				else
 				{
@@ -843,18 +954,23 @@ namespace MatterHackers.DataConverters3D
 					{
 						list.Remove(this);
 						list.AddRange(this.Children);
-						parent.Invalidate(new InvalidateArgs(parent, InvalidateType.Content, null));
 					});
 				}
 			}
 
-			parent.Invalidate(new InvalidateArgs(this, InvalidateType.Content, null));
+			parent.Invalidate(new InvalidateArgs(this, InvalidateType.Children));
+		}
+
+		public bool Equals(IObject3D other)
+		{
+			return base.Equals(other);
 		}
 	}
 
 	public class CacheContext
 	{
 		public Dictionary<string, IObject3D> Items { get; set; } = new Dictionary<string, IObject3D>();
+
 		public Dictionary<string, Mesh> Meshes { get; set; } = new Dictionary<string, Mesh>();
 	}
 }

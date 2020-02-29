@@ -122,8 +122,8 @@ namespace MatterHackers.Agg
 				foreach (var shape in lionShape.Shapes)
 				{
 					Stroke stroke = new Stroke(shape.VertexStorage);
-					stroke.width(widthSlider.Value);
-					stroke.line_join(LineJoin.Round);
+					stroke.Width = widthSlider.Value;
+					stroke.LineJoin = LineJoin.Round;
 					VertexSourceApplyTransform trans = new VertexSourceApplyTransform(stroke, transform);
 					ScanlineRenderer scanlineRenderer = new ScanlineRenderer();
 					rasterizer.add_path(trans);
@@ -208,7 +208,7 @@ namespace MatterHackers.Agg
 		public static void Main(string[] args)
 		{
 			//AggContext.Init(embeddedResourceName: "lion_outline.config.json");
-			AggContext.Config.ProviderTypes.SystemWindow = "MatterHackers.Agg.UI.OpenGLSystemWindow, agg_platform_win32";
+			AggContext.Config.ProviderTypes.SystemWindowProvider = "MatterHackers.Agg.UI.OpenGLWinformsWindowProvider, agg_platform_win32";
 
 			var demoWidget = new lion_outline();
 

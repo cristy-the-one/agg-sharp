@@ -1,5 +1,5 @@
 ﻿/*
-Copyright (c) 2014, Lars Brubaker
+Copyright (c) 2018, Lars Brubaker, John Lewin
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -40,6 +40,8 @@ namespace MatterHackers.Agg.UI
 
 		public bool AutoResize { get; set; } = true;
 
+		private bool listenForImageChanged;
+
 		public ImageWidget(int width, int height)
 		{
 			ForcePixelAlignment = true;
@@ -47,42 +49,55 @@ namespace MatterHackers.Agg.UI
 		}
 
 		public ImageWidget(ImageBuffer initialImage)
+			: this(initialImage, true) // Image only constructor passes true for classic always registered/listening behavior
+		{
+		}
+
+		public ImageWidget(ImageBuffer initialImage, bool listenForImageChanged)
 			: this(initialImage.Width, initialImage.Height)
 		{
-			Image = initialImage;
-			if (image != null)
-			{
-				Image.ImageChanged += ImageChanged;
-			}
+			this.listenForImageChanged = listenForImageChanged;
+			this.Image = initialImage;
 		}
 
 		private void ImageChanged(object s, EventArgs e)
 		{
-			if (AutoResize)
+			if (this.AutoResize)
 			{
-				this.Width = image.Width;
-				this.Height = image.Height;
+				this.Width = this.Image.Width;
+				this.Height = this.Image.Height;
 			}
+
 			Invalidate();
 		}
 
-		public ImageBuffer Image
+		public virtual ImageBuffer Image
 		{
 			get  => image;
 			set
 			{
+				if (image != null)
+				{
+					image.ImageChanged -= ImageChanged;
+				}
+
 				if (image != value)
 				{
-					if (image != null)
+					if (listenForImageChanged)
 					{
-						image.ImageChanged -= ImageChanged;
+						image = value;
+						image.ImageChanged += ImageChanged;
 					}
-					image = value;
-					image.ImageChanged += ImageChanged;
+					else
+					{
+						image = value;
+					}
+
 					if (AutoResize)
 					{
 						LocalBounds = new RectangleDouble(0, 0, image.Width, image.Height);
 					}
+
 					Invalidate();
 				}
 			}
@@ -90,7 +105,7 @@ namespace MatterHackers.Agg.UI
 
 		public override void OnDraw(Graphics2D graphics2D)
 		{
-			if (image != null)
+			if (this.Image != null)
 			{
 				RectangleDouble screenBounds = TransformToScreenSpace(LocalBounds);
 				double pixelAlignXAdjust = 0;
@@ -100,7 +115,7 @@ namespace MatterHackers.Agg.UI
 					pixelAlignXAdjust = screenBounds.Left - (int)screenBounds.Left;
 					pixelAlignYAdjust = screenBounds.Bottom - (int)screenBounds.Bottom;
 				}
-				graphics2D.Render(image, -pixelAlignXAdjust, -pixelAlignYAdjust);
+				graphics2D.Render(this.Image, -pixelAlignXAdjust, -pixelAlignYAdjust);
 			}
 			base.OnDraw(graphics2D);
 		}

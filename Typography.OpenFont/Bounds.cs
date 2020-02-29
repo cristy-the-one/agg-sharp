@@ -1,4 +1,4 @@
-﻿//Apache2, 2017, WinterDev
+﻿//Apache2, 2017-present, WinterDev
 //Apache2, 2014-2016, Samuel Carlsson, WinterDev
 
 namespace Typography.OpenFont
@@ -21,10 +21,10 @@ namespace Typography.OpenFont
             _ymax = ymax;
         }
 
-        public short XMin { get { return _xmin; } }
-        public short YMin { get { return _ymin; } }
-        public short XMax { get { return _xmax; } }
-        public short YMax { get { return _ymax; } }
+        public short XMin => _xmin;
+        public short YMin => _ymin;
+        public short XMax => _xmax;
+        public short YMax => _ymax;
 #if DEBUG
         public override string ToString()
         {

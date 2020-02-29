@@ -38,6 +38,7 @@ namespace MatterHackers.Agg.VertexSource
 		private Vector2 rightBottomRadius;
 		private Vector2 rightTopRadius;
 		private Vector2 leftTopRadius;
+
 		public double ResolutionScale { get; set; } = 1;
 
 		public RoundedRect(double left, double bottom, double right, double top, double radius)
@@ -129,67 +130,25 @@ namespace MatterHackers.Agg.VertexSource
 
 		public override IEnumerable<VertexData> Vertices()
 		{
-			Arc currentProcessingArc = new Arc()
+			var allPaths = new JoinPaths();
+			allPaths.SourcePaths.Add(new Arc(bounds.Left + leftBottomRadius.X, bounds.Bottom + leftBottomRadius.Y, leftBottomRadius.X, leftBottomRadius.Y, Math.PI, Math.PI + Math.PI * 0.5)
 			{
 				ResolutionScale = ResolutionScale
-			};
-
-			currentProcessingArc.init(bounds.Left + leftBottomRadius.X, bounds.Bottom + leftBottomRadius.Y, leftBottomRadius.X, leftBottomRadius.Y, Math.PI, Math.PI + Math.PI * 0.5);
-			foreach (VertexData vertexData in currentProcessingArc.Vertices())
+			});
+			allPaths.SourcePaths.Add(new Arc(bounds.Right - rightBottomRadius.X, bounds.Bottom + rightBottomRadius.Y, rightBottomRadius.X, rightBottomRadius.Y, Math.PI + Math.PI * 0.5, 0.0)
 			{
-				if (ShapePath.is_stop(vertexData.command))
-				{
-					break;
-				}
-				yield return vertexData;
-			}
-			currentProcessingArc.init(bounds.Right - rightBottomRadius.X, bounds.Bottom + rightBottomRadius.Y, rightBottomRadius.X, rightBottomRadius.Y, Math.PI + Math.PI * 0.5, 0.0);
-			foreach (VertexData vertexData in currentProcessingArc.Vertices())
+				ResolutionScale = ResolutionScale
+			});
+			allPaths.SourcePaths.Add(new Arc(bounds.Right - rightTopRadius.X, bounds.Top - rightTopRadius.Y, rightTopRadius.X, rightTopRadius.Y, 0.0, Math.PI * 0.5)
 			{
-				if (ShapePath.is_move_to(vertexData.command))
-				{
-					// skip the initial moveto
-					continue;
-				}
-				if (ShapePath.is_stop(vertexData.command))
-				{
-					break;
-				}
-				yield return vertexData;
-			}
-
-			currentProcessingArc.init(bounds.Right - rightTopRadius.X, bounds.Top - rightTopRadius.Y, rightTopRadius.X, rightTopRadius.Y, 0.0, Math.PI * 0.5);
-			foreach (VertexData vertexData in currentProcessingArc.Vertices())
+				ResolutionScale = ResolutionScale
+			});
+			allPaths.SourcePaths.Add(new Arc(bounds.Left + leftTopRadius.X, bounds.Top - leftTopRadius.Y, leftTopRadius.X, leftTopRadius.Y, Math.PI * 0.5, Math.PI)
 			{
-				if (ShapePath.is_move_to(vertexData.command))
-				{
-					// skip the initial moveto
-					continue;
-				}
-				if (ShapePath.is_stop(vertexData.command))
-				{
-					break;
-				}
-				yield return vertexData;
-			}
+				ResolutionScale = ResolutionScale
+			});
 
-			currentProcessingArc.init(bounds.Left + leftTopRadius.X, bounds.Top - leftTopRadius.Y, leftTopRadius.X, leftTopRadius.Y, Math.PI * 0.5, Math.PI);
-			foreach (VertexData vertexData in currentProcessingArc.Vertices())
-			{
-				if (ShapePath.is_move_to(vertexData.command))
-				{
-					// skip the initial moveto
-					continue;
-				}
-				if (ShapePath.is_stop(vertexData.command))
-				{
-					break;
-				}
-				yield return vertexData;
-			}
-
-			yield return new VertexData(ShapePath.FlagsAndCommand.EndPoly | ShapePath.FlagsAndCommand.FlagClose | ShapePath.FlagsAndCommand.FlagCCW, new Vector2());
-			yield return new VertexData(ShapePath.FlagsAndCommand.Stop, new Vector2());
+			return allPaths.Vertices();
 		}
-	};
+	}
 }

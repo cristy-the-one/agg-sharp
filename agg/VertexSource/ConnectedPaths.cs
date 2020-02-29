@@ -26,44 +26,35 @@ using System.Collections.Generic;
 
 namespace MatterHackers.Agg.VertexSource
 {
-	//------------------------------------------------------------rounded_rect
-	//
-	// See Implementation agg_rounded_rect.cpp
-	//
-	public class ConnectedPaths : VertexSourceLegacySupport
+	/// <summary>
+	/// This class is used to merge multiple paths into a single IVertexSource path.
+	/// This is great to do things like have a path as an outside an a second path that can become an inside hole.
+	/// </summary>
+	public class CombinePaths : VertexSourceLegacySupport
 	{
-		public ConnectedPaths()
+		public CombinePaths()
 		{
 		}
 
-		public ConnectedPaths(IVertexSource a, IVertexSource b)
+		public CombinePaths(IVertexSource a, IVertexSource b)
 			: this(new IVertexSource[] { a, b })
 		{
 		}
 
-		public ConnectedPaths(IEnumerable<IVertexSource> paths)
+		public CombinePaths(IEnumerable<IVertexSource> paths)
 		{
-			SourcPaths.AddRange(paths);
+			SourcePaths.AddRange(paths);
 		}
 
-		private List<IVertexSource> SourcPaths { get; } = new List<IVertexSource>();
+		public List<IVertexSource> SourcePaths { get; } = new List<IVertexSource>();
 
-		override public IEnumerable<VertexData> Vertices()
+		public override IEnumerable<VertexData> Vertices()
 		{
-			for (int i = 0; i < SourcPaths.Count; i++)
+			for (int i = 0; i < SourcePaths.Count; i++)
 			{
-				IVertexSource sourcePath = SourcPaths[i];
-				bool firstMove = true;
+				IVertexSource sourcePath = SourcePaths[i];
 				foreach (VertexData vertexData in sourcePath.Vertices())
 				{
-					// skip the initial command if it is not the first path and is a moveto.
-					if (i > 0
-						&& firstMove
-						&& ShapePath.is_move_to(vertexData.command))
-					{
-						continue;
-					}
-
 					// when we hit a stop move on to the next path
 					if (ShapePath.is_stop(vertexData.command))
 					{
@@ -74,6 +65,7 @@ namespace MatterHackers.Agg.VertexSource
 			}
 
 			// and send the actual stop
+			yield return new VertexData(ShapePath.FlagsAndCommand.EndPoly | ShapePath.FlagsAndCommand.FlagClose | ShapePath.FlagsAndCommand.FlagCCW, new Vector2());
 			yield return new VertexData(ShapePath.FlagsAndCommand.Stop, new Vector2());
 		}
 	}

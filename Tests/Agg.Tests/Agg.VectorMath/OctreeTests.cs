@@ -41,24 +41,30 @@ namespace MatterHackers.PolygonMesh.UnitTests
 		[Test]
 		public void AllLeavesPutAtRoot()
 		{
-			Octree<int> tree = new Octree<int>(1, new Bounds(-10, -20, -30, 10, 20, 30));
-			tree.Insert(1, new Bounds(-9, -19, -29, 9, 19, 29));
-			tree.Insert(2, new Bounds(-9, -19, -29, 9, 19, 29));
-			tree.Insert(3, new Bounds(-9, -19, -29, 9, 19, 29));
-			tree.Insert(4, new Bounds(-9, -19, -29, 9, 19, 29));
+			Octree<int> tree = new Octree<int>(1, new AxisAlignedBoundingBox(-10, -20, -30, 10, 20, 30));
+			tree.Insert(1, new AxisAlignedBoundingBox(-9, -19, -29, 9, 19, 29));
+			tree.Insert(2, new AxisAlignedBoundingBox(-9, -19, -29, 9, 19, 29));
+			tree.Insert(3, new AxisAlignedBoundingBox(-9, -19, -29, 9, 19, 29));
+			tree.Insert(4, new AxisAlignedBoundingBox(-9, -19, -29, 9, 19, 29));
 
 			Assert.IsTrue(tree.CountBranches() == 1);
 
-			Assert.AreEqual(tree.SearchBounds(new Bounds(-9, -19, -29, 9, 19, 29)).Count(), 4, "Found all items.");
-			Assert.AreEqual(tree.SearchPoint(0, 0, 0).Count(), 4, "All or around this point.");
-			Assert.AreEqual(tree.FindCollisions(1).Count(), 3, "Don't find the item we are starting from.");
-			Assert.AreEqual(tree.Count, 4, "Have the right count.");
+			tree.SearchBounds(new AxisAlignedBoundingBox(-9, -19, -29, 9, 19, 29));
+			Assert.AreEqual(tree.QueryResults.Count(), 4, "Found all items.");
+			tree.SearchPoint(0, 0, 0);
+			Assert.AreEqual(4, tree.QueryResults.Count(), "All or around this point.");
+			tree.FindCollisions(1);
+			Assert.AreEqual(3, tree.QueryResults.Count(), "Don't find the item we are starting from.");
+			Assert.AreEqual(4, tree.Count, "Have the right count.");
 
 			tree.Remove(3);
-			Assert.AreEqual(tree.SearchBounds(new Bounds(-9, -19, -29, 9, 19, 29)).Count(), 3, "Found all items.");
-			Assert.AreEqual(tree.SearchPoint(0, 0, 0).Count(), 3, "All or around this point.");
-			Assert.AreEqual(tree.FindCollisions(1).Count(), 2, "Don't find the item we are starting from.");
-			Assert.AreEqual(tree.Count, 3, "Have the right count.");
+			tree.SearchBounds(new AxisAlignedBoundingBox(-9, -19, -29, 9, 19, 29));
+			Assert.AreEqual(3, tree.QueryResults.Count(), "Found all items.");
+			tree.SearchPoint(0, 0, 0);
+			Assert.AreEqual(3, tree.QueryResults.Count(), "All or around this point.");
+			tree.FindCollisions(1);
+			Assert.AreEqual(2, tree.QueryResults.Count(), "Don't find the item we are starting from.");
+			Assert.AreEqual(3, tree.Count, "Have the right count.");
 		}
 	}
 }

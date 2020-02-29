@@ -28,6 +28,7 @@ either expressed or implied, of the FreeBSD Project.
 */
 
 using System;
+using System.Linq;
 
 namespace MatterHackers.Agg.UI
 {
@@ -60,8 +61,8 @@ namespace MatterHackers.Agg.UI
 			{
 				if (s is GuiWidget widget)
 				{
-					normalWidget.Children[0].Text = widget.Text;
-					selectedWidget.Children[0].Text = widget.Text;
+					normalWidget.Children.FirstOrDefault().Text = widget.Text;
+					selectedWidget.Children.FirstOrDefault().Text = widget.Text;
 				}
 			};
 
@@ -80,8 +81,6 @@ namespace MatterHackers.Agg.UI
 
 			viewWidget.Selectable = false;
 			viewWidget.BackgroundColor = backgroundColor;
-
-			EnforceSizingAdornActive(viewWidget, isActive, useUnderlineStyling, fixedSize);
 		}
 	}
 
@@ -132,24 +131,6 @@ namespace MatterHackers.Agg.UI
 			}
 
 			base.OnTabIndexChanged();
-		}
-
-		protected static void EnforceSizingAdornActive(GuiWidget viewWidget, bool isActive, bool useUnderlineStyle, int controlHeight = 40, int controlMargin = 0)
-		{
-			viewWidget.Height = controlHeight;
-			viewWidget.Margin = controlMargin;
-
-			if (isActive && useUnderlineStyle)
-			{
-				// Adorn the active tab with a underline bar
-				viewWidget.AddChild(new GuiWidget()
-				{
-					HAnchor = HAnchor.Stretch,
-					Height = UnderlineHeight,
-					BackgroundColor = ActiveTheme.Instance.PrimaryAccentColor,
-					VAnchor = VAnchor.Bottom
-				});
-			}
 		}
 	}
 

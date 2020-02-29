@@ -30,6 +30,7 @@ either expressed or implied, of the FreeBSD Project.
 using MatterHackers.Agg.VertexSource;
 using MatterHackers.VectorMath;
 using System;
+using System.Linq;
 
 namespace MatterHackers.Agg.UI
 {
@@ -72,13 +73,14 @@ namespace MatterHackers.Agg.UI
 			{
 				throw new Exception("We should have one child that is the thum view.");
 			}
-			Children[0].LocalBounds = LocalBounds;
+
+			Children.FirstOrDefault().LocalBounds = LocalBounds;
 			base.OnBoundsChanged(e);
 		}
 
 		protected bool MouseDownOnThumb { get; set; }
 
-		override public void OnMouseDown(MouseEventArgs mouseEvent)
+		public override void OnMouseDown(MouseEventArgs mouseEvent)
 		{
 			MouseDownOnThumb = true;
 			MouseDownPosition = new Vector2(mouseEvent.X, mouseEvent.Y);
@@ -86,13 +88,13 @@ namespace MatterHackers.Agg.UI
 			base.OnMouseDown(mouseEvent);
 		}
 
-		override public void OnMouseUp(MouseEventArgs mouseEvent)
+		public override void OnMouseUp(MouseEventArgs mouseEvent)
 		{
 			MouseDownOnThumb = false;
 			base.OnMouseUp(mouseEvent);
 		}
 
-		override public void OnMouseMove(MouseEventArgs mouseEvent)
+		public override void OnMouseMove(MouseEventArgs mouseEvent)
 		{
 			if (MouseDownOnThumb)
 			{
@@ -192,7 +194,7 @@ namespace MatterHackers.Agg.UI
 			UpdateScrollBar();
 		}
 
-		override public void OnMouseDown(MouseEventArgs mouseEvent)
+		public override void OnMouseDown(MouseEventArgs mouseEvent)
 		{
 			if (!thumb.BoundsRelativeToParent.Contains(mouseEvent.X, mouseEvent.Y))
 			{

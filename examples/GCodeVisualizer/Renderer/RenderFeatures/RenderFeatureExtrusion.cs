@@ -128,10 +128,10 @@ namespace MatterHackers.GCodeVisualizer
 				{
 					Vector3Float startF = this.GetStart(renderInfo);
 					Vector3Float endF = this.GetEnd(renderInfo);
-					Vector2 start = new Vector2(startF.x, startF.y);
+					Vector2 start = new Vector2(startF.X, startF.Y);
 					renderInfo.Transform.transform(ref start);
 
-					Vector2 end = new Vector2(endF.x, endF.y);
+					Vector2 end = new Vector2(endF.X, endF.Y);
 					renderInfo.Transform.transform(ref end);
 
 					graphics2DGl.DrawAALineRounded(start, end, extrusionLineWidths/2, extrusionColor);
@@ -142,14 +142,14 @@ namespace MatterHackers.GCodeVisualizer
 					VertexSourceApplyTransform transformedPathStorage = new VertexSourceApplyTransform(pathStorage, renderInfo.Transform);
 					Stroke stroke = new Stroke(transformedPathStorage, extrusionLineWidths/2);
 
-					stroke.line_cap(LineCap.Round);
-					stroke.line_join(LineJoin.Round);
+					stroke.LineCap = LineCap.Round;
+					stroke.LineJoin = LineJoin.Round;
 
 					Vector3Float start = this.GetStart(renderInfo);
 					Vector3Float end = this.GetEnd(renderInfo);
 
-					pathStorage.Add(start.x, start.y, ShapePath.FlagsAndCommand.MoveTo);
-					pathStorage.Add(end.x, end.y, ShapePath.FlagsAndCommand.LineTo);
+					pathStorage.Add(start.X, start.Y, ShapePath.FlagsAndCommand.MoveTo);
+					pathStorage.Add(end.X, end.Y, ShapePath.FlagsAndCommand.LineTo);
 
 					graphics2D.Render(stroke, extrusionColor);
 				}

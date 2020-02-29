@@ -17,17 +17,13 @@ namespace MatterHackers.Agg.UI
 {
 	public class TitleBarWidget : GuiWidget
 	{
-		private bool mouseDownOnBar = false;
 		private Vector2 DownPosition;
+		private bool mouseDownOnBar = false;
+		GuiWidget windowToDrag;
 
-		public TitleBarWidget()
+		public TitleBarWidget(GuiWidget windowToDrag)
 		{
-		}
-
-		public TitleBarWidget(RectangleDouble InBounds)
-		{
-			OriginRelativeParent = new Vector2(InBounds.Left, InBounds.Bottom);
-			LocalBounds = new RectangleDouble(0, 0, InBounds.Width, InBounds.Height);
+			this.windowToDrag = windowToDrag;
 		}
 
 		protected bool MouseDownOnBar
@@ -36,14 +32,7 @@ namespace MatterHackers.Agg.UI
 			set { mouseDownOnBar = value; }
 		}
 
-		public override void OnDraw(Graphics2D graphics2D)
-		{
-			RoundedRect roundRect = new RoundedRect(BoundsRelativeToParent, 0);
-			graphics2D.Render(roundRect, new Color(0, 0, 0, 30));
-			base.OnDraw(graphics2D);
-		}
-
-		override public void OnMouseDown(MouseEventArgs mouseEvent)
+		public override void OnMouseDown(MouseEventArgs mouseEvent)
 		{
 			if (PositionWithinLocalBounds(mouseEvent.X, mouseEvent.Y))
 			{
@@ -59,30 +48,36 @@ namespace MatterHackers.Agg.UI
 			base.OnMouseDown(mouseEvent);
 		}
 
-		override public void OnMouseUp(MouseEventArgs mouseEvent)
-		{
-			MouseDownOnBar = false;
-			base.OnMouseUp(mouseEvent);
-		}
-
-		override public void OnMouseMove(MouseEventArgs mouseEvent)
+		public override void OnMouseMove(MouseEventArgs mouseEvent)
 		{
 			if (MouseDownOnBar)
 			{
 				Vector2 mousePosition = new Vector2(mouseEvent.X, mouseEvent.Y);
 
-				Vector2 parentOriginRelativeToItsParent = Parent.OriginRelativeParent;
-				parentOriginRelativeToItsParent.X += mousePosition.X - DownPosition.X;
-				parentOriginRelativeToItsParent.Y += mousePosition.Y - DownPosition.Y;
-				if (parentOriginRelativeToItsParent.Y + Parent.Height - (Height - DownPosition.Y) > Parent.Parent.Height)
+				Vector2 dragPosition = windowToDrag.Position;
+				dragPosition.X += mousePosition.X - DownPosition.X;
+				dragPosition.Y += mousePosition.Y - DownPosition.Y;
+				if (dragPosition.Y + windowToDrag.Height - (Height - DownPosition.Y) > windowToDrag.Parent.Height)
 				{
-					parentOriginRelativeToItsParent.Y = Parent.Parent.Height - Parent.Height + (Height - DownPosition.Y);
+					dragPosition.Y = windowToDrag.Parent.Height - windowToDrag.Height + (Height - DownPosition.Y);
 				}
-				Parent.Invalidate();
-				Parent.OriginRelativeParent = parentOriginRelativeToItsParent;
-				Parent.Invalidate();
+
+				var windowToDragParent = windowToDrag.Parent;
+				if (windowToDragParent != null)
+				{
+					dragPosition.X = agg_basics.Clamp(dragPosition.X, -windowToDrag.Width + 10, windowToDragParent.Width - 10);
+					dragPosition.Y = agg_basics.Clamp(dragPosition.Y, -windowToDrag.Height + 10, windowToDragParent.Height - windowToDrag.Height);
+				}
+
+				windowToDrag.Position = dragPosition;
 			}
 			base.OnMouseMove(mouseEvent);
+		}
+
+		public override void OnMouseUp(MouseEventArgs mouseEvent)
+		{
+			MouseDownOnBar = false;
+			base.OnMouseUp(mouseEvent);
 		}
 	}
 }

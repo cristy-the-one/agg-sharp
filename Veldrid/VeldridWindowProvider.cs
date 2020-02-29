@@ -21,6 +21,7 @@ using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
 using MatterHackers.RenderOpenGl;
 using MatterHackers.Agg.UI;
+using System.Collections.Generic;
 
 namespace MatterHackers.VeldridProvider
 {
@@ -29,6 +30,10 @@ namespace MatterHackers.VeldridProvider
 		public GraphicsDevice _graphicsDevice;
 
 		private VeldridSystemWindow veldridPlatformWindow;
+
+		public IReadOnlyList<SystemWindow> OpenWindows { get; }
+
+		public SystemWindow TopWindow { get; }
 
 		/// <summary>
 		/// Creates or connects a PlatformWindow to the given SystemWindow
@@ -67,7 +72,7 @@ namespace MatterHackers.VeldridProvider
 						new KeyEventArgs((Keys)keyEvent.Key));
 				};
 
-				// setup our veldrid gl imediate mode emulator
+				// setup our veldrid gl immediate mode emulator
 				var veldridGl = new VeldridGL();
 				MatterHackers.RenderOpenGl.OpenGl.GL.Instance = veldridGl;
 				veldridGl.CreateResources(_graphicsDevice);
@@ -176,7 +181,6 @@ namespace MatterHackers.VeldridProvider
 			}
 
 		}
-
 
 		public void CloseSystemWindow(SystemWindow systemWindow)
 		{

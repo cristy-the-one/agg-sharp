@@ -33,6 +33,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Emit;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using MatterHackers.Agg;
 using MatterHackers.Agg.UI;
 using MatterHackers.Agg.VertexSource;
@@ -47,20 +48,26 @@ namespace MatterHackers.DataConverters3D
 	{
 		Default,
 		Solid,
-		Support
+		Support,
+		WipeTower
 	};
 
+	[Flags]
 	public enum InvalidateType
 	{
-		Matrix,
-		Color,
-		Material,
-		Content,
-		Mesh,
-		Path,
-		Image,
-		Properties,
-		Redraw,
+		Children = 1 << 0,
+		Color = 1 << 1,
+		Image = 1 << 2,
+		Material = 1 << 3,
+		Matrix = 1 << 4,
+		Mesh = 1 << 5,
+		Name = 1 << 6,
+		OutputType = 1 << 7,
+		Path = 1 << 8,
+		Properties = 1 << 9,
+		DisplayValues = 1 << 10,
+
+		All = (Children | Color | Image | Material | Matrix | Mesh | Name | OutputType | Path | Properties | DisplayValues)
 	};
 
 	[Flags]
@@ -79,12 +86,10 @@ namespace MatterHackers.DataConverters3D
 	{
 		public IObject3D Source { get; }
 		public InvalidateType InvalidateType { get; }
-		public UndoBuffer UndoBuffer { get; }
-		public InvalidateArgs(IObject3D source, InvalidateType invalidateType, UndoBuffer undoBuffer = null)
+		public InvalidateArgs(IObject3D source, InvalidateType invalidateType)
 		{
 			this.Source = source;
 			this.InvalidateType = invalidateType;
-			this.UndoBuffer = undoBuffer;
 		}
 	}
 
@@ -111,6 +116,62 @@ namespace MatterHackers.DataConverters3D
 		public static void AddRange(this IList<IObject3D> list, IEnumerable<IObject3D> addItems)
 		{
 			list.AddRange(addItems);
+		}
+
+		public static void CopyWorldProperties(this IObject3D copyTo, IObject3D copyFrom, IObject3D root, Object3DPropertyFlags flags)
+		{
+			if (flags.HasFlag(Object3DPropertyFlags.Matrix))
+			{
+				copyTo.Matrix = copyFrom.WorldMatrix(root);
+			}
+			if (flags.HasFlag(Object3DPropertyFlags.Color))
+			{
+				copyTo.Color = copyFrom.WorldColor(root);
+			}
+			if (flags.HasFlag(Object3DPropertyFlags.MaterialIndex))
+			{
+				copyTo.MaterialIndex = copyFrom.WorldMaterialIndex(root);
+			}
+			if (flags.HasFlag(Object3DPropertyFlags.Name))
+			{
+				copyTo.Name = copyFrom.Name;
+			}
+			if (flags.HasFlag(Object3DPropertyFlags.OutputType))
+			{
+				copyTo.OutputType = copyFrom.WorldOutputType(root);
+			}
+			if (flags.HasFlag(Object3DPropertyFlags.Visible))
+			{
+				copyTo.Visible = copyFrom.WorldVisible(root);
+			}
+		}
+
+		public static void CopyProperties(this IObject3D copyTo, IObject3D copyFrom, Object3DPropertyFlags flags)
+		{
+			if (flags.HasFlag(Object3DPropertyFlags.Matrix))
+			{
+				copyTo.Matrix = copyFrom.Matrix;
+			}
+			if (flags.HasFlag(Object3DPropertyFlags.Color))
+			{
+				copyTo.Color = copyFrom.Color;
+			}
+			if (flags.HasFlag(Object3DPropertyFlags.MaterialIndex))
+			{
+				copyTo.MaterialIndex = copyFrom.MaterialIndex;
+			}
+			if (flags.HasFlag(Object3DPropertyFlags.Name))
+			{
+				copyTo.Name = copyFrom.Name;
+			}
+			if (flags.HasFlag(Object3DPropertyFlags.OutputType))
+			{
+				copyTo.OutputType = copyFrom.OutputType;
+			}
+			if (flags.HasFlag(Object3DPropertyFlags.Visible))
+			{
+				copyTo.Visible = copyFrom.Visible;
+			}
 		}
 
 		public static bool HasChildren(this IObject3D object3D)
@@ -146,10 +207,9 @@ namespace MatterHackers.DataConverters3D
 			}
 		}
 
-		public static long MeshRenderId(this IObject3D root)
+		public static ulong MeshRenderId(this IObject3D root)
 		{
-			long hash = 19;
-
+			ulong hash = 14695981039346656037;
 			using (root.RebuildLock())
 			{
 				var oldMatrix = root.Matrix;
@@ -159,9 +219,9 @@ namespace MatterHackers.DataConverters3D
 				{
 					unchecked
 					{
-						hash = hash * 31 + item.Mesh.LongHashBeforeClean;
-						hash = hash * 31 + item.WorldMatrix(root).GetLongHashCode();
-						hash = hash * 31 + item.WorldColor(root).GetLongHashCode();
+						hash = item.Mesh.LongHashBeforeClean.GetLongHashCode(hash);
+						hash = item.WorldMatrix(root).GetLongHashCode(hash);
+						hash = item.WorldColor(root).GetLongHashCode(hash);
 					}
 				}
 
@@ -179,33 +239,29 @@ namespace MatterHackers.DataConverters3D
 		/// <returns></returns>
 		public static IEnumerable<IObject3D> VisibleMeshes(this IObject3D root)
 		{
-			if (root.Visible)
+			var items = new Stack<IObject3D>(new[] { root });
+			while (items.Count > 0)
 			{
-				var items = new Stack<IObject3D>(new[] { root });
-				while (items.Count > 0)
-				{
-					var item = items.Pop();
+				var item = items.Pop();
 
-					// store the mesh so we are thread safe regarding having a valid object (not null)
-					var mesh = item.Mesh;
-					if (mesh != null)
+				// store the mesh so we are thread safe regarding having a valid object (not null)
+				var mesh = item.Mesh;
+				if (mesh != null)
+				{
+					// there is a mesh return the object
+					yield return item;
+				}
+				else // there is no mesh go into the object and iterate its children
+				{
+					foreach (var n in item.Children)
 					{
-						// there is a mesh return the object
-						yield return item;
-					}
-					else // there is no mesh go into the object and iterate its children
-					{
-						foreach (var n in item.Children)
+						if (n.Visible)
 						{
-							if (n.Visible)
-							{
-								items.Push(n);
-							}
+							items.Push(n);
 						}
 					}
 				}
 			}
-
 		}
 	}
 
@@ -214,7 +270,7 @@ namespace MatterHackers.DataConverters3D
 		IVertexSource VertexSource { get; set; }
 	}
 
-	public interface IObject3D : IAscendable<IObject3D>
+	public interface IObject3D : IAscendable<IObject3D>, IEquatable<IObject3D>
 	{
 		event EventHandler<InvalidateArgs> Invalidated;
 
@@ -270,6 +326,8 @@ namespace MatterHackers.DataConverters3D
 		/// <returns></returns>
 		IObject3D Clone();
 
+		Task Rebuild();
+
 		/// <summary>
 		/// Mark that this object has changed (and notify its parent)
 		/// </summary>
@@ -282,13 +340,18 @@ namespace MatterHackers.DataConverters3D
 		bool CanEdit { get; }
 
 		[JsonIgnore]
-		bool CanApply { get; }
+		bool CanFlatten { get; }
+
+		/// <summary>
+		/// Describes the expanded state in the scene tree view
+		/// </summary>
+		bool Expanded { get; }
 
 		/// <summary>
 		/// Remove the IObject3D from the tree and keep whatever functionality it was adding.
 		/// This may require removing many child objects from the tree depending on implementation.
 		/// </summary>
-		void Apply(UndoBuffer undoBuffer);
+		void Flatten(UndoBuffer undoBuffer);
 
 		/// <summary>
 		/// Remove the IObject3D from the tree and undo whatever functionality it was adding (if appropriate).
@@ -307,7 +370,7 @@ namespace MatterHackers.DataConverters3D
 		/// return a 64 bit hash code of the transforms and children and transforms
 		/// </summary>
 		/// <returns></returns>
-		long GetLongHashCode();
+		ulong GetLongHashCode(ulong hash = 14695981039346656037);
 
 		/// <summary>
 		/// Serialize the current instance to Json

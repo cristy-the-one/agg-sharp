@@ -673,26 +673,27 @@ namespace MatterHackers.Agg
 		[JsonIgnore]
 		public byte alpha;
 
-		public static readonly Color Transparent = new Color(0, 0, 0, 0);
-		public static readonly Color White = new Color(255, 255, 255, 255);
-		public static readonly Color LightGray = new Color(225, 225, 225, 255);
-		public static readonly Color Gray = new Color(125, 125, 125, 255);
-		public static readonly Color DarkGray = new Color(85, 85, 85, 255);
-		public static readonly Color Black = new Color(0, 0, 0, 255);
-		public static readonly Color Red = new Color(255, 0, 0, 255);
-		public static readonly Color FireEngineRed = new Color("#F62817");
-		public static readonly Color Orange = new Color(255, 127, 0, 255);
-		public static readonly Color Pink = new Color(255, 192, 203, 255);
-		public static readonly Color Green = new Color(0, 255, 0, 255);
+		public static readonly Color Black = new Color(0, 0, 0);
 		public static readonly Color Blue = new Color("#0000FF");
-		public static readonly Color DargBlue = new Color("#0000A0");
+		public static readonly Color Crimson = new Color("#DC143C");
+		public static readonly Color Cyan = new Color(0, 255, 255);
+		public static readonly Color DarkBlue = new Color("#0000A0");
+		public static readonly Color DarkGray = new Color(85, 85, 85);
+		public static readonly Color FireEngineRed = new Color("#F62817");
+		public static readonly Color Gray = new Color(125, 125, 125);
+		public static readonly Color Green = new Color(0, 255, 0);
+		public static readonly Color Indigo = new Color(75, 0, 130);
 		public static readonly Color LightBlue = new Color("#ADD8E6");
-		public static readonly Color Indigo = new Color(75, 0, 130, 255);
-		public static readonly Color Violet = new Color(143, 0, 255, 255);
-		public static readonly Color Cyan = new Color(0, 255, 255, 255);
-		public static readonly Color Magenta = new Color(255, 0, 255, 255);
-		public static readonly Color Yellow = new Color(255, 255, 0, 255);
-		public static readonly Color YellowGreen = new Color(154, 205, 50, 255);
+		public static readonly Color LightGray = new Color(225, 225, 225);
+		public static readonly Color Magenta = new Color(255, 0, 255);
+		public static readonly Color Orange = new Color(255, 127, 0);
+		public static readonly Color Pink = new Color(255, 192, 203);
+		public static readonly Color Red = new Color(255, 0, 0);
+		public static readonly Color Transparent = new Color(0, 0, 0, 0);
+		public static readonly Color Violet = new Color(143, 0, 255);
+		public static readonly Color White = new Color(255, 255, 255);
+		public static readonly Color Yellow = new Color(255, 255, 0);
+		public static readonly Color YellowGreen = new Color(154, 205, 50);
 
 		[JsonIgnore]
 		public int Red0To255 { get { return (int)red; } set { red = (byte)value; } }
@@ -766,19 +767,9 @@ namespace MatterHackers.Agg
 			}
 		}
 
-		public long GetLongHashCode()
+		public ulong GetLongHashCode(ulong hash = 14695981039346656037)
 		{
-			long hash = 19;
-
-			unchecked
-			{
-				hash = hash * 31 + red;
-				hash = hash * 31 + green;
-				hash = hash * 31 + blue;
-				hash = hash * 31 + alpha;
-			}
-
-			return hash;
+			return agg_basics.ComputeHash(new byte[] { red, green, blue, alpha}, hash);
 		}
 
 		public Color(string htmlString)
@@ -1097,7 +1088,7 @@ namespace MatterHackers.Agg
 
 	public static class ColorExtensionMethods
 	{
-		public static IColorType AdjustContrast(this IColorType colorToAdjust, IColorType fixedColor, double minimumRequiredContrast = 3)
+		public static IColorType WithContrast(this IColorType colorToAdjust, IColorType fixedColor, double minimumRequiredContrast = 3)
 		{
 			var contrast = colorToAdjust.Contrast(fixedColor);
 			int tries = 0;
@@ -1118,15 +1109,16 @@ namespace MatterHackers.Agg
 			return colorToAdjust;
 		}
 
-		public static IColorType AdjustSaturation(this IColorType original, double saturationMultiplier)
+		public static Color WithAlpha(this Color color, int alpha)
 		{
-			double hue0To1;
-			double saturation0To1;
-			double lightness0To1;
+			return new Color(color, alpha);
+		}
 
-			ColorF colorF = original is ColorF ? (ColorF)original : original.ToColorF();
+		public static ColorF AdjustSaturation(this IColorType original, double saturationMultiplier)
+		{
+			ColorF colorF = original.ToColorF();
 
-			colorF.GetHSL(out hue0To1, out saturation0To1, out lightness0To1);
+			colorF.GetHSL(out double hue0To1, out double saturation0To1, out double lightness0To1);
 			saturation0To1 *= saturationMultiplier;
 
 			return ColorF.FromHSL(hue0To1, saturation0To1, lightness0To1);
@@ -1236,28 +1228,20 @@ namespace MatterHackers.Agg
 			return Math.Round((min + max) / 2, 2);
 		}
 
-		public static IColorType SetLightness(this IColorType original, double lightness)
+		public static ColorF WithLightness(this IColorType original, double lightness)
 		{
-			double hue0To1;
-			double saturation0To1;
-			double lightness0To1;
+			ColorF colorF = original.ToColorF();
 
-			ColorF colorF = original is ColorF ? (ColorF)original : original.ToColorF();
-
-			colorF.GetHSL(out hue0To1, out saturation0To1, out lightness0To1);
+			colorF.GetHSL(out double hue0To1, out double saturation0To1, out _);
 
 			return ColorF.FromHSL(hue0To1, saturation0To1, lightness);
 		}
 
-		public static IColorType AdjustLightness(this IColorType original, double lightnessMultiplier)
+		public static ColorF AdjustLightness(this IColorType original, double lightnessMultiplier)
 		{
-			double hue0To1;
-			double saturation0To1;
-			double lightness0To1;
+			ColorF colorF = original.ToColorF();
 
-			ColorF colorF = original is ColorF ? (ColorF)original : original.ToColorF();
-
-			colorF.GetHSL(out hue0To1, out saturation0To1, out lightness0To1);
+			colorF.GetHSL(out double hue0To1, out double saturation0To1, out double lightness0To1);
 			lightness0To1 *= lightnessMultiplier;
 
 			return ColorF.FromHSL(hue0To1, saturation0To1, lightness0To1);

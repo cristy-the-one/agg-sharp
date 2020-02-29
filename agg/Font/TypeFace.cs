@@ -1,7 +1,3 @@
-using MatterHackers.Agg.Transform;
-using MatterHackers.Agg.VertexSource;
-using MatterHackers.VectorMath;
-
 //----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 //
@@ -15,11 +11,15 @@ using MatterHackers.VectorMath;
 // warranty, and with no claim as to its suitability for any purpose.
 //
 //----------------------------------------------------------------------------
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using Typography.OpenFont;
+using System.Linq;
+using MatterHackers.Agg.Transform;
+using MatterHackers.Agg.VertexSource;
+using MatterHackers.VectorMath;
 
 namespace MatterHackers.Agg.Font
 {
@@ -30,7 +30,7 @@ namespace MatterHackers.Agg.Font
 			public int horiz_adv_x;
 			public int unicode;
 			public string glyphName;
-			public VertexStorage glyphData = new VertexStorage();
+			public IVertexSource glyphData = new VertexStorage();
 		}
 
 		private class Panos_1
@@ -94,7 +94,8 @@ namespace MatterHackers.Agg.Font
 			}
 		}
 
-		TtfTypeface ttfTypeFace;
+
+		Typography.OpenFont.Typeface _ofTypeface;
 
 		private String fontId;
 		private int horiz_adv_x;
@@ -208,13 +209,13 @@ namespace MatterHackers.Agg.Font
 
 		public bool LoadTTF(Stream stream)
 		{
-			var reader = new OpenFontReader();
-			ttfTypeFace = reader.Read(stream);
-			if (ttfTypeFace != null)
+			var reader = new Typography.OpenFont.OpenFontReader();
+			_ofTypeface = reader.Read(stream);
+			if (_ofTypeface != null)
 			{
-				this.ascent = ttfTypeFace.Ascender;
-				this.descent = ttfTypeFace.Descender;
-				this.unitsPerEm = ttfTypeFace.UnitsPerEm;
+				this.ascent = _ofTypeface.Ascender;
+				this.descent = _ofTypeface.Descender;
+				this.unitsPerEm = _ofTypeface.UnitsPerEm;
 				return true;
 			}
 
@@ -278,7 +279,10 @@ namespace MatterHackers.Agg.Font
 				return newGlyph;
 			}
 
-			newGlyph.glyphData.ParseSvgDString(dString);
+			if (newGlyph.glyphData is VertexStorage storage)
+			{
+				storage.ParseSvgDString(dString);
+			}
 
 			return newGlyph;
 		}
@@ -331,44 +335,106 @@ namespace MatterHackers.Agg.Font
 
 		internal IVertexSource GetGlyphForCharacter(char character)
 		{
-			if (ttfTypeFace != null)
+			if (_ofTypeface != null)
 			{
 				// TODO: MAKE SURE THIS IS OFF!!!!!!! It is un-needed and only for debugging
 				//glyphs.Clear();
 			}
 
-			IVertexSource vertexSource = null;
 			// TODO: check for multi character glyphs (we don't currently support them in the reader).
-			Glyph glyph = null;
+			return GetGlyph(character)?.glyphData;
+		}
+
+		private Glyph GetGlyph(char character)
+		{
+			Glyph glyph;
+
 			if (!glyphs.TryGetValue(character, out glyph))
 			{
 				// if we have a loaded ttf try to create the glyph data
-				if (ttfTypeFace != null)
+				if (_ofTypeface != null)
 				{
+					var storage = new VertexStorage();
+					var translator = new VertexSourceGlyphTranslator(storage);
+					var glyphIndex = _ofTypeface.LookupIndex(character);
+					var ttfGlyph = _ofTypeface.GetGlyphByIndex(glyphIndex);
+					//
+					Typography.OpenFont.IGlyphReaderExtensions.Read(translator, ttfGlyph.GlyphPoints, ttfGlyph.EndPoints);
+
+					//
 					glyph = new Glyph();
-					var translator = new VertexSourceGlyphTranslator(glyph.glyphData);
-					var glyphIndex = ttfTypeFace.LookupIndex(character);
-					var ttfGlyph = ttfTypeFace.GetGlyphByIndex(glyphIndex);
-					translator.Read(ttfGlyph.GlyphPoints, ttfGlyph.EndPoints);
 					glyph.unicode = character;
-					glyph.horiz_adv_x = ttfTypeFace.GetHAdvanceWidthFromGlyphIndex(glyphIndex);
+					glyph.horiz_adv_x = _ofTypeface.GetHAdvanceWidthFromGlyphIndex(glyphIndex);
+
 					glyphs.Add(character, glyph);
-					vertexSource = glyph.glyphData;
+
+					// Wrap glyph data with ClosedLoopGlyphData to ensure all loops are correctly closed
+					glyph.glyphData = new ClosedLoopGlyphData(storage);
 				}
 			}
-			else
+
+			return glyph;
+		}
+
+		/// <summary>
+		/// Ensure all MoveTo operations are preceded by ClosePolygon commands
+		/// </summary>
+		private class ClosedLoopGlyphData : IVertexSource
+		{
+			private VertexStorage storage;
+
+			public ClosedLoopGlyphData(VertexStorage source)
 			{
-				vertexSource = glyph.glyphData;
+				storage = new VertexStorage();
+
+				var vertexData = source.Vertices().Where(v => v.command != ShapePath.FlagsAndCommand.FlagNone).ToArray();
+
+				VertexData previous = default(VertexData);
+
+				for (var i = 0; i < vertexData.Length; i++)
+				{
+					var current = vertexData[i];
+
+					// All MoveTo operations should be preceded by ClosePolygon 
+					if (i > 0 &&
+						current.IsMoveTo
+						&& ShapePath.is_vertex(previous.command))
+					{
+						storage.ClosePolygon();
+					}
+
+					// Add original VertexData
+					storage.Add(current.position.X, current.position.Y, current.command);
+
+					// Hold prior item
+					previous = current;
+				}
+
+				// Ensure closed
+				storage.ClosePolygon();
 			}
 
-			return vertexSource;
+			public void rewind(int pathId = 0)
+			{
+				storage.rewind(pathId);
+			}
+
+			public ShapePath.FlagsAndCommand vertex(out double x, out double y)
+			{
+				return storage.vertex(out x, out y);
+			}
+
+			public IEnumerable<VertexData> Vertices()
+			{
+				return storage.Vertices();
+			}
 		}
 
 		internal int GetAdvanceForCharacter(char character, char nextCharacterToKernWith)
 		{
 			// TODO: check for kerning and adjust
-			Glyph glyph;
-			if (glyphs.TryGetValue(character, out glyph))
+			Glyph glyph = GetGlyph(character);
+			if (glyph != null)
 			{
 				return glyph.horiz_adv_x;
 			}
@@ -378,8 +444,8 @@ namespace MatterHackers.Agg.Font
 
 		internal int GetAdvanceForCharacter(char character)
 		{
-			Glyph glyph;
-			if (glyphs.TryGetValue(character, out glyph))
+			Glyph glyph = GetGlyph(character);
+			if (glyph != null)
 			{
 				return glyph.horiz_adv_x;
 			}

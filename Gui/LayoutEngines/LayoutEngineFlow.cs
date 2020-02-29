@@ -55,13 +55,18 @@ namespace MatterHackers.Agg.UI
 			{
 				using (parent.LayoutLock())
 				{
-					for (int i = 0; i < parent.Children.Count; i++)
+					foreach (GuiWidget child in parent.Children)
 					{
-						GuiWidget child = parent.Children[i];
+						if (parent.HasBeenClosed)
+						{
+							return;
+						}
+
 						if (child.Visible == false)
 						{
 							continue;
 						}
+
 						ApplyHAnchorToChild(parent, child);
 						ApplyVAnchorToChild(parent, child);
 					}
@@ -78,10 +83,16 @@ namespace MatterHackers.Agg.UI
 					{
 						foreach (GuiWidget child in parent.Children)
 						{
+							if (parent.HasBeenClosed)
+							{
+								return;
+							}
+
 							if (child.Visible == false)
 							{
 								continue;
 							}
+
 							ApplyHAnchorToChild(parent, child);
 							ApplyVAnchorToChild(parent, child);
 						}
@@ -98,9 +109,13 @@ namespace MatterHackers.Agg.UI
 			{
 				RectangleDouble encloseChildrenRect = parent.GetMinimumBoundsToEncloseChildren();
 
-				for (int childIndex = 0; childIndex < parent.Children.Count; childIndex++)
+				foreach (GuiWidget child in parent.Children)
 				{
-					GuiWidget child = parent.Children[childIndex];
+					if (parent.HasBeenClosed)
+					{
+						return;
+					}
+
 					if (child.Visible == false)
 					{
 						continue;
@@ -117,9 +132,13 @@ namespace MatterHackers.Agg.UI
 			{
 				RectangleDouble encloseChildrenRect = parent.GetMinimumBoundsToEncloseChildren();
 
-				for (int childIndex = 0; childIndex < parent.Children.Count; childIndex++)
+				foreach (GuiWidget child in parent.Children)
 				{
-					GuiWidget child = parent.Children[childIndex];
+					if (parent.HasBeenClosed)
+					{
+						return;
+					}
+
 					if (child.Visible == false)
 					{
 						continue;
@@ -211,9 +230,13 @@ namespace MatterHackers.Agg.UI
 			double totalMinimumWidthOfAllItems = 0;
 			double totalMinimumHeightOfAllItems = 0;
 
-			for (int childIndex = 0; childIndex < parent.Children.Count; childIndex++)
+			foreach (GuiWidget child in parent.Children)
 			{
-				GuiWidget child = parent.Children[childIndex];
+				if (parent.HasBeenClosed)
+				{
+					return;
+				}
+
 				if (child.Visible == false)
 				{
 					continue;
@@ -278,6 +301,11 @@ namespace MatterHackers.Agg.UI
 						double curX = parent.DevicePadding.Left;
 						foreach (GuiWidget child in parent.Children)
 						{
+							if (parent.HasBeenClosed)
+							{
+								return;
+							}
+
 							if (child.Visible == true)
 							{
 								double newX = curX - child.LocalBounds.Left + child.DeviceMarginAndBorder.Left;
@@ -286,6 +314,10 @@ namespace MatterHackers.Agg.UI
 								{
 									RectangleDouble curChildBounds = child.LocalBounds;
 									double newWidth = (parent.LocalBounds.Width - parent.DevicePadding.Width - totalWidthOfStaticItems) / numItemsNeedingExpanding;
+									if (GuiWidget.DefaultEnforceIntegerBounds)
+									{
+										newWidth = Math.Floor(newWidth);
+									}
 									child.LocalBounds = new RectangleDouble(curChildBounds.Left, curChildBounds.Bottom,
 										curChildBounds.Left + newWidth, curChildBounds.Top);
 								}
@@ -300,12 +332,21 @@ namespace MatterHackers.Agg.UI
 						double curX = parent.LocalBounds.Right - parent.DevicePadding.Right;
 						foreach (GuiWidget child in parent.Children)
 						{
+							if (parent.HasBeenClosed)
+							{
+								return;
+							}
+
 							if (child.Visible == true)
 							{
 								if (child.HAnchorIsSet(HAnchor.Stretch))
 								{
 									RectangleDouble curChildBounds = child.LocalBounds;
 									double newWidth = (parent.LocalBounds.Width - parent.DevicePadding.Width - totalWidthOfStaticItems) / numItemsNeedingExpanding;
+									if (GuiWidget.DefaultEnforceIntegerBounds)
+									{
+										newWidth = Math.Floor(newWidth);
+									}
 									child.LocalBounds = new RectangleDouble(curChildBounds.Left, curChildBounds.Bottom,
 										curChildBounds.Left + newWidth, curChildBounds.Top);
 								}
@@ -323,6 +364,11 @@ namespace MatterHackers.Agg.UI
 						double curY = parent.DevicePadding.Bottom;
 						foreach (GuiWidget child in parent.Children)
 						{
+							if (parent.HasBeenClosed)
+							{
+								return;
+							}
+
 							if (child.Visible == true)
 							{
 								double newY = curY - child.LocalBounds.Bottom + child.DeviceMarginAndBorder.Bottom;
@@ -331,6 +377,10 @@ namespace MatterHackers.Agg.UI
 								{
 									RectangleDouble curChildBounds = child.LocalBounds;
 									double newHeight = (parent.LocalBounds.Height - parent.DevicePadding.Height - totalHeightOfStaticItems) / numItemsNeedingExpanding;
+									if (GuiWidget.DefaultEnforceIntegerBounds)
+									{
+										newHeight = Math.Floor(newHeight);
+									}
 									child.LocalBounds = new RectangleDouble(curChildBounds.Left, curChildBounds.Bottom,
 										curChildBounds.Right, curChildBounds.Bottom + newHeight);
 								}
@@ -345,12 +395,21 @@ namespace MatterHackers.Agg.UI
 						double curY = parent.LocalBounds.Top - parent.DevicePadding.Top;
 						foreach (GuiWidget child in parent.Children)
 						{
+							if (parent.HasBeenClosed)
+							{
+								return;
+							}
+
 							if (child.Visible == true)
 							{
 								if (child.VAnchorIsSet(VAnchor.Stretch))
 								{
 									RectangleDouble curChildBounds = child.LocalBounds;
 									double newHeight = (parent.LocalBounds.Height - parent.DevicePadding.Height - totalHeightOfStaticItems) / numItemsNeedingExpanding;// - child.DeviceMarginAndBorder.Height;
+									if (GuiWidget.DefaultEnforceIntegerBounds)
+									{
+										newHeight = Math.Floor(newHeight);
+									}
 									child.LocalBounds = new RectangleDouble(curChildBounds.Left, curChildBounds.Bottom,
 										curChildBounds.Right, curChildBounds.Bottom + newHeight);
 								}

@@ -21,6 +21,7 @@ using MatterHackers.VectorMath;
 //          http://www.antigrain.com
 //----------------------------------------------------------------------------
 using System;
+using System.Collections.Generic;
 
 namespace MatterHackers.Agg.Image
 {
@@ -52,13 +53,15 @@ namespace MatterHackers.Agg.Image
 				if(_hasTransparency == null)
 				{
 					_hasTransparency = false;
+					var buffer = GetBuffer();
 					// check if the image has any alpha set to something other than 255
-					for(int y=0; y<Height; y++)
+					for (int y=0; y<Height; y++)
 					{
-						for(int x=0; x<Width; x++)
+						var yOffset = GetBufferOffsetY(y);
+						for (int x=0; x<Width; x++)
 						{
 							// get the alpha at this pixel
-							if(GetBuffer()[GetBufferOffsetXY(x, y) + 3] < 255)
+							if(buffer[yOffset + x + 3] < 255)
 							{
 								_hasTransparency = true;
 								x = Width;
@@ -480,6 +483,9 @@ namespace MatterHackers.Agg.Image
 			SetUpLookupTables();
 		}
 
+		/// <summary>
+		/// Flip pixels in the Y axis
+		/// </summary>
 		public void FlipY()
 		{
 			byte[] buffer = GetBuffer();
@@ -495,6 +501,42 @@ namespace MatterHackers.Agg.Image
 				}
 			}
 		}
+
+		/// <summary>
+		/// Flip pixels in the X axis
+		/// </summary>
+		public void FlipX()
+		{
+			byte[] buffer = GetBuffer();
+
+			// Iterate each row, swapping pixels in x from outer to midpoint
+			for (int y = 0; y < this.Height; y++)
+			{
+				for (int x = 0; x < this.Width / 2; x++)
+				{
+					int leftOffset = GetBufferOffsetXY(x, y);
+					int rightOffset = GetBufferOffsetXY(this.Width - x - 1, y);
+
+					// Hold
+					byte leftBuffer0 = buffer[leftOffset + 0];
+					byte leftBuffer1 = buffer[leftOffset + 1];
+					byte leftBuffer2 = buffer[leftOffset + 2];
+					byte leftBuffer3 = buffer[leftOffset + 3];
+
+					// Swap
+					buffer[leftOffset + 0] = buffer[rightOffset + 0];
+					buffer[leftOffset + 1] = buffer[rightOffset + 1];
+					buffer[leftOffset + 2] = buffer[rightOffset + 2];
+					buffer[leftOffset + 3] = buffer[rightOffset + 3];
+
+					buffer[rightOffset + 0] = leftBuffer0;
+					buffer[rightOffset + 1] = leftBuffer1;
+					buffer[rightOffset + 2] = leftBuffer2;
+					buffer[rightOffset + 3] = leftBuffer3;
+				}
+			}
+		}
+
 
 		public void SetBuffer(byte[] byteBuffer, int bufferOffset)
 		{
@@ -1264,6 +1306,47 @@ namespace MatterHackers.Agg.Image
 			}
 
 			return accumulatedPosition / accumulatedCount;
+		}
+
+		public static Circle GetCircleBounds(this ImageBuffer image)
+		{
+			var outsidePoints = new List<Vector2>();
+
+			// get the first pixel position for each y
+			// get the last pixel position for each y
+
+			return SmallestEnclosingCircle.MakeCircle(outsidePoints);
+		}
+
+		/// <summary>
+		/// Find the image content and scale it to the output size in consideration of the 
+		/// Material Design icon scaling rules
+		/// </summary>
+		/// <param name="sourceImage"></param>
+		/// <param name="width"></param>
+		/// <param name="height"></param>
+		/// <returns></returns>
+		public static ImageBuffer MaterialDesignScaledIcon(this ImageBuffer sourceImage, int width, int height)
+		{
+			// these are the sizes defined by Material Design
+			var iconGridSize = 192;
+			var squareWidth = 152;
+			var circleDiameter = 176;
+			var verticalRectangle = new Vector2(128, 176);
+			var horizontalRectangle = new Vector2(176, 128);
+
+			// the first thing we will do is discover the icon shape that minimizes scaling
+
+			// now figure out the scaling that needs to happen to the source to make our image fit 
+			// the correct icon bounds at the new size
+			var circle = sourceImage.GetCircleBounds();
+			var bounds = sourceImage.GetBounds();
+
+			// create the new scaled image
+			var scaledImage = new ImageBuffer(sourceImage);
+
+			// return it
+			return scaledImage;
 		}
 
 		public static ImageBuffer CreateScaledImage(this ImageBuffer sourceImage, int width, int height)

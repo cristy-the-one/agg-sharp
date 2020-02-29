@@ -29,13 +29,14 @@ either expressed or implied, of the FreeBSD Project.
 
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using MatterHackers.VectorMath;
 
 namespace MatterHackers.Agg.UI
 {
 	public enum Direction { Up, Down };
 
-	public class Menu : Button
+	public class Menu : Button, IIgnoredPopupChild
 	{
 		private double maxHeight;
 
@@ -90,13 +91,13 @@ namespace MatterHackers.Agg.UI
 			base.OnMouseDown(mouseEvent);
 		}
 
-		public override void OnClick(MouseEventArgs mouseEvent)
+		protected override void OnClick(MouseEventArgs mouseEvent)
 		{
 			if (!mouseDownWhileOpen)
 			{
 				if (MenuItems.Count > 0)
 				{
-					UiThread.RunOnIdle(ShowMenu);
+					ShowMenu();
 					IsOpen = true;
 				}
 			}
@@ -108,7 +109,7 @@ namespace MatterHackers.Agg.UI
 
 		protected virtual void ShowMenu()
 		{
-			if (this.Parent == null)
+			if (this.Parents<SystemWindow>().FirstOrDefault() == null)
 			{
 				throw new Exception("You cannot show the menu on a Menu unless it has a parent (has been added to a GuiWidget).");
 			}
@@ -127,7 +128,7 @@ namespace MatterHackers.Agg.UI
 			DropDownContainer = new DropDownContainer(MenuItems, topToBottom, this, MenuDirection, maxHeight, AlignToRightEdge, true)
 			{
 				BorderWidth = MenuItemsBorderWidth,
-				BorderColor = MenuItemsBorderColor,
+				BorderColor = this.PopupBorderColor,
 				BackgroundColor = MenuItemsBackgroundColor
 			};
 
@@ -158,5 +159,9 @@ namespace MatterHackers.Agg.UI
 
 			DropDownContainer = null;
 		}
+
+		public bool KeepMenuOpen => IsOpen;
+
+		public Color PopupBorderColor { get; set; }
 	}
 }

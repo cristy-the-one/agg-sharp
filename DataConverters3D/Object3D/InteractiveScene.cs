@@ -32,12 +32,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using MatterHackers.Agg;
 using MatterHackers.Agg.UI;
-using MatterHackers.DataConverters3D.UndoCommands;
+using MatterHackers.Localizations;
 using MatterHackers.PolygonMesh;
 using MatterHackers.RayTracer;
-using MatterHackers.Localizations;
 using MatterHackers.VectorMath;
 using Newtonsoft.Json;
 
@@ -52,6 +52,12 @@ namespace MatterHackers.DataConverters3D
 
 		public InteractiveScene()
 		{
+			SourceItem = new Object3D();
+		}
+
+		public virtual Task Rebuild()
+		{
+			return Task.CompletedTask;
 		}
 
 		[JsonIgnore]
@@ -98,15 +104,15 @@ namespace MatterHackers.DataConverters3D
 		[JsonIgnore]
 		public bool ShowSelectionShadow { get; set; } = true;
 
-		public void Save(Stream stream, Action<double, string> progress = null)
+		public async void Save(Stream stream, Action<double, string> progress = null)
 		{
 			// Serialize the scene to disk using a modified Json.net pipeline with custom ContractResolvers and JsonConverters
 			try
 			{
-				this.PersistAssets(progress);
+				await this.PersistAssets(progress);
 
 				// Clear the selection before saving
-				List<IObject3D> selectedItems = new List<IObject3D>();
+				var selectedItems = new List<IObject3D>();
 
 				if (this.SelectedItem != null)
 				{
@@ -254,42 +260,60 @@ namespace MatterHackers.DataConverters3D
 
 		public void Load(IObject3D sourceItem)
 		{
-			if (sourceItem != null)
-			{
-				sourceItem.Invalidated -= SourceItem_Invalidated;
-			}
-
-			this.sourceItem = sourceItem;
-			sourceItem.Invalidated += SourceItem_Invalidated;
-		}
-
-		private void SourceItem_Invalidated(object sender, InvalidateArgs e)
-		{
-			this.Invalidated?.Invoke(this, e);
+			this.SourceItem = sourceItem;
 		}
 
 		#region IObject3D
 
-		private IObject3D sourceItem = new Object3D();
+		IObject3D _sourceItem  = null;
 
-		public string OwnerID { get => sourceItem.OwnerID; set => sourceItem.OwnerID = value; }
-		public SafeList<IObject3D> Children { get => sourceItem.Children; set => sourceItem.Children = value; }
-		public IObject3D Parent { get => sourceItem.Parent; set => sourceItem.Parent = value; }
-		public Color Color { get => sourceItem.Color; set => sourceItem.Color = value; }
-		public int MaterialIndex { get => sourceItem.MaterialIndex; set => sourceItem.MaterialIndex = value; }
-		public PrintOutputTypes OutputType { get => sourceItem.OutputType; set => sourceItem.OutputType = value; }
-		public Matrix4X4 Matrix { get => sourceItem.Matrix; set => sourceItem.Matrix = value; }
-		public string TypeName => sourceItem.TypeName;
-		public Mesh Mesh { get => sourceItem.Mesh; set => sourceItem.Mesh = value; }
-		public string MeshPath { get => sourceItem.MeshPath; set => sourceItem.MeshPath = value; }
-		public string Name { get => sourceItem.Name; set => sourceItem.Name = value; }
-		public bool Persistable => sourceItem.Persistable;
-		public bool Visible { get => sourceItem.Visible; set => sourceItem.Visible = value; }
-		public string ID { get => sourceItem.ID; set => sourceItem.ID = value; }
+
+		private IObject3D SourceItem
+		{
+			get => _sourceItem;
+			set
+			{
+				void SourceItem_Invalidated(object sender, InvalidateArgs e)
+				{
+					Invalidate(e);
+				}
+
+				if (_sourceItem != null)
+				{
+					_sourceItem.Children.ItemsModified -= OnItemsModified;
+					_sourceItem.Invalidated -= SourceItem_Invalidated;
+				}
+
+				_sourceItem = value;
+
+				_sourceItem.Invalidated += SourceItem_Invalidated;
+				_sourceItem.Children.ItemsModified += OnItemsModified;
+			}
+		}
+
+		private void OnItemsModified(object sender, EventArgs e)
+		{
+			ItemsModified?.Invoke(_sourceItem, null);
+		}
+
+		public string OwnerID { get => SourceItem.OwnerID; set => SourceItem.OwnerID = value; }
+		public SafeList<IObject3D> Children { get => SourceItem.Children; set => SourceItem.Children = value; }
+		public IObject3D Parent { get => SourceItem.Parent; set => SourceItem.Parent = value; }
+		public Color Color { get => SourceItem.Color; set => SourceItem.Color = value; }
+		public int MaterialIndex { get => SourceItem.MaterialIndex; set => SourceItem.MaterialIndex = value; }
+		public PrintOutputTypes OutputType { get => SourceItem.OutputType; set => SourceItem.OutputType = value; }
+		public Matrix4X4 Matrix { get => SourceItem.Matrix; set => SourceItem.Matrix = value; }
+		public string TypeName => SourceItem.TypeName;
+		public Mesh Mesh { get => SourceItem.Mesh; set => SourceItem.Mesh = value; }
+		public string MeshPath { get => SourceItem.MeshPath; set => SourceItem.MeshPath = value; }
+		public string Name { get => SourceItem.Name; set => SourceItem.Name = value; }
+		public bool Persistable => SourceItem.Persistable;
+		public bool Visible { get => SourceItem.Visible; set => SourceItem.Visible = value; }
+		public string ID { get => SourceItem.ID; set => SourceItem.ID = value; }
 
 		public bool CanEdit => false;
 
-		public bool CanApply => false;
+		public bool CanFlatten => false;
 
 		public bool CanRemove => false;
 
@@ -298,15 +322,19 @@ namespace MatterHackers.DataConverters3D
 		[JsonIgnore]
 		public bool RebuildLocked => false;
 
-		public IObject3D Clone() => sourceItem.Clone();
+		public bool Expanded => true;
 
-		public string ToJson() => sourceItem.ToJson();
+		public event EventHandler ItemsModified;
 
-		public long GetLongHashCode() => sourceItem.GetLongHashCode();
+		public IObject3D Clone() => SourceItem.Clone();
 
-		public IPrimitive TraceData() => sourceItem.TraceData();
+		public string ToJson() => SourceItem.ToJson();
 
-		public void SetMeshDirect(Mesh mesh) => sourceItem.SetMeshDirect(mesh);
+		public ulong GetLongHashCode(ulong hash = 14695981039346656037) => SourceItem.GetLongHashCode(hash);
+
+		public IPrimitive TraceData() => SourceItem.TraceData();
+
+		public void SetMeshDirect(Mesh mesh) => SourceItem.SetMeshDirect(mesh);
 
 		public void Invalidate(InvalidateArgs invalidateType)
 		{
@@ -315,10 +343,10 @@ namespace MatterHackers.DataConverters3D
 
 		public AxisAlignedBoundingBox GetAxisAlignedBoundingBox(Matrix4X4 matrix)
 		{
-			return sourceItem.GetAxisAlignedBoundingBox(matrix);
+			return SourceItem.GetAxisAlignedBoundingBox(matrix);
 		}
 
-		public void Apply(UndoBuffer undoBuffer)
+		public void Flatten(UndoBuffer undoBuffer)
 		{
 			throw new NotImplementedException();
 		}
@@ -328,17 +356,51 @@ namespace MatterHackers.DataConverters3D
 			throw new NotImplementedException();
 		}
 
-		public void Rebuild(UndoBuffer undoBuffer)
-		{
-			throw new NotImplementedException();
-		}
-
 		public RebuildLock RebuildLock()
 		{
 			throw new NotImplementedException();
 		}
 
-		#endregion
+		public void Undo()
+		{
+			using (new SelectionMaintainer(this))
+			{
+				UndoBuffer.Undo();
+			}
+		}
 
+		public void Redo()
+		{
+			using (new SelectionMaintainer(this))
+			{
+				UndoBuffer.Redo();
+			}
+		}
+
+		public bool Equals(IObject3D other)
+		{
+			return base.Equals(other);
+		}
+
+		public List<IObject3D> GetSelectedItems()
+		{
+			var selectedItem = this.SelectedItem;
+			var selectedItems = new List<IObject3D>();
+			if (selectedItem != null)
+			{
+				if (selectedItem is SelectionGroupObject3D)
+				{
+					selectedItems = selectedItem.Children.ToList();
+				}
+				else
+				{
+					selectedItems = new List<IObject3D> { selectedItem };
+				}
+			}
+
+			return selectedItems;
+		}
+
+		#endregion
 	}
 }

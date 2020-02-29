@@ -29,316 +29,71 @@ either expressed or implied, of the FreeBSD Project.
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Text;
 
 namespace MatterHackers.PolygonMesh
 {
-	[DebuggerDisplay("ID = {ID} | V1 = {VertexOnEnd[0].ID} V2 = {VertexOnEnd[1].ID}")]
 	public class MeshEdge
 	{
-		public FaceEdge firstFaceEdge;
-		public NextMeshEdgesFromEnds NextMeshEdgeFromEnd;
-		public VertexOnEnds VertexOnEnd;
+		private readonly List<int> _faces = new List<int>();
 
-		public MeshEdge()
+		public MeshEdge(int vertex0Index, int vertex1Index)
 		{
-			this.NextMeshEdgeFromEnd[0] = this; // start out with a circular reference to ourselves
-			this.NextMeshEdgeFromEnd[1] = this; // start out with a circular reference to ourselves
+			Vertex0Index = vertex0Index;
+			Vertex1Index = vertex1Index;
 		}
 
-		public MeshEdge(IVertex vertex1, IVertex vertex2)
-			: this()
+		/// <summary>
+		/// Gets the indices of all the faces that share this edge.
+		/// </summary>
+		public IReadOnlyList<int> Faces => _faces;
+
+		public int Vertex0Index { get; private set; }
+
+		public int Vertex1Index { get; private set; }
+
+		public static IReadOnlyList<MeshEdge> CreateMeshEdgeList(Mesh mesh)
 		{
-			this.VertexOnEnd[0] = vertex1;
-			this.VertexOnEnd[1] = vertex2;
-
-			AddToMeshEdgeLinksOfVertex(vertex1);
-			AddToMeshEdgeLinksOfVertex(vertex2);
-		}
-
-		public int ID { get; } = Mesh.GetID();
-
-		public void AddDebugInfo(StringBuilder totalDebug, int numTabs)
-		{
-			totalDebug.Append(new string('\t', numTabs) + String.Format("Vertex1: {0}\n", VertexOnEnd[0] != null ? VertexOnEnd[0].ID.ToString() : "null"));
-			totalDebug.Append(String.Format("Vertex1 Next MeshEdge: {0}\n", NextMeshEdgeFromEnd[0].ID));
-
-			totalDebug.Append(new string('\t', numTabs) + String.Format("Vertex2: {0}\n", VertexOnEnd[1] != null ? VertexOnEnd[1].ID.ToString() : "null"));
-			totalDebug.Append(String.Format("Vertex2 Next MeshEdge: {0}\n", NextMeshEdgeFromEnd[1].ID));
-
-			int firstFaceEdgeID = -1;
-			if (firstFaceEdge != null)
+			// make a list of every face edge (faceIndex, vertex0Index, vertex1Index)
+			var faceEdges = new List<(int face, int start, int end)>(mesh.Faces.Count * 3);
+			for (int i = 0; i < mesh.Faces.Count; i++)
 			{
-				firstFaceEdgeID = firstFaceEdge.ID;
+				var face = mesh.Faces[i];
+
+				// sort them so the start index is always the smaller index
+				faceEdges.Add((i, Math.Min(face.v0, face.v1), Math.Max(face.v0, face.v1)));
+				faceEdges.Add((i, Math.Min(face.v1, face.v2), Math.Max(face.v1, face.v2)));
+				faceEdges.Add((i, Math.Min(face.v2, face.v0), Math.Max(face.v2, face.v0)));
 			}
-			totalDebug.Append(new string('\t', numTabs) + String.Format("First FaceEdge: {0}\n", firstFaceEdgeID));
-		}
 
-		public void AddToMeshEdgeLinksOfVertex(IVertex vertexToAddTo)
-		{
-			int endIndex = GetVertexEndIndex(vertexToAddTo);
-
-			if (vertexToAddTo.FirstMeshEdge == null)
+			// make a dictionary, keyed on edge of faces
+			var faceEdgesThatShareStartIndex = new Dictionary<(int start, int end), List<int>>();
+			for (int i = 0; i < faceEdges.Count; i++)
 			{
-				// the vertex is not currently part of any edge
-				// we are the only edge for this vertex so set its links all to this.
-				vertexToAddTo.FirstMeshEdge = this;
-				NextMeshEdgeFromEnd[endIndex] = this;
-			}
-			else // the vertex is already part of an edge (or many)
-			{
-				int endIndexOnFirstMeshEdge = vertexToAddTo.FirstMeshEdge.GetVertexEndIndex(vertexToAddTo);
-
-				// remember what the one that is there is pointing at
-				MeshEdge vertexCurrentNext = vertexToAddTo.FirstMeshEdge.NextMeshEdgeFromEnd[endIndexOnFirstMeshEdge];
-
-				// point the one that is there at us
-				vertexToAddTo.FirstMeshEdge.NextMeshEdgeFromEnd[endIndexOnFirstMeshEdge] = this;
-
-				// and point the one that are already there at this.
-				this.NextMeshEdgeFromEnd[endIndex] = vertexCurrentNext;
-			}
-		}
-
-		public IEnumerable<FaceEdge> FaceEdgesSharingMeshEdge()
-		{
-			FaceEdge curFaceEdge = this.firstFaceEdge;
-			if (curFaceEdge != null)
-			{
-				do
+				var (face, start, end) = faceEdges[i];
+				if (!faceEdgesThatShareStartIndex.ContainsKey((start, end)))
 				{
-					yield return curFaceEdge;
-
-					curFaceEdge = curFaceEdge.RadialNextFaceEdge;
-				} while (curFaceEdge != this.firstFaceEdge);
-			}
-		}
-
-		public IEnumerable<Face> FacesSharingMeshEdge()
-		{
-			foreach (FaceEdge faceEdge in FaceEdgesSharingMeshEdge())
-			{
-				yield return faceEdge.ContainingFace;
-			}
-		}
-
-		public FaceEdge GetFaceEdge(Face faceToFindFaceEdgeFor)
-		{
-			foreach (FaceEdge faceEdge in faceToFindFaceEdgeFor.FaceEdges())
-			{
-				if (faceEdge.ContainingFace == faceToFindFaceEdgeFor)
-				{
-					return faceEdge;
+					faceEdgesThatShareStartIndex.Add((start, end), new List<int>());
 				}
+
+				faceEdgesThatShareStartIndex[(start, end)].Add(face);
 			}
 
-			return null;
-		}
+			// now that we have a dictionary of all the face edges by start index
+			// we can make the list of mesh edges
+			var meshEdges = new List<MeshEdge>();
 
-		public MeshEdge GetNextMeshEdgeConnectedTo(IVertex vertex)
-		{
-			int endVertices = GetVertexEndIndex(vertex);
-			return NextMeshEdgeFromEnd[endVertices];
-		}
-
-		public int GetNumFacesSharingEdge()
-		{
-			int numFacesSharingEdge = 0;
-
-			foreach (Face face in FacesSharingMeshEdge())
+			foreach (var kvp in faceEdgesThatShareStartIndex)
 			{
-				numFacesSharingEdge++;
-			}
-
-			return numFacesSharingEdge;
-		}
-
-		public int GetOpositeVertexEndIndex(IVertex vertexToNotGetIndexOf)
-		{
-			if (vertexToNotGetIndexOf == VertexOnEnd[0])
-			{
-				return 1;
-			}
-			else
-			{
-				if (vertexToNotGetIndexOf != VertexOnEnd[1])
+				var meshEdge = new MeshEdge(kvp.Key.start, kvp.Key.end);
+				foreach (var face in kvp.Value)
 				{
-					throw new Exception("You must only ask to get the edge links for a MeshEdge that is linked to the given vertex.");
+					meshEdge._faces.Add(face);
 				}
-				return 0;
-			}
-		}
 
-		public MeshEdge GetOppositeMeshEdge(IVertex vertexToGetOppositeFor)
-		{
-			if (vertexToGetOppositeFor == VertexOnEnd[0])
-			{
-				return NextMeshEdgeFromEnd[1];
-			}
-			else
-			{
-				if (vertexToGetOppositeFor != VertexOnEnd[1])
-				{
-					throw new Exception("You must only ask to get the opposite vertex on a MeshEdge that is linked to the given vertexToGetOppositeFor.");
-				}
-				return NextMeshEdgeFromEnd[0];
-			}
-		}
-
-		public IVertex GetOppositeVertex(IVertex vertexToGetOppositeFor)
-		{
-			if (vertexToGetOppositeFor == VertexOnEnd[0])
-			{
-				return VertexOnEnd[1];
-			}
-			else
-			{
-				if (vertexToGetOppositeFor != VertexOnEnd[1])
-				{
-					throw new Exception("You must only ask to get the opposite vertex on a MeshEdge that is linked to the given vertexToGetOppositeFor.");
-				}
-				return VertexOnEnd[0];
-			}
-		}
-
-		public int GetVertexEndIndex(IVertex vertexToGetIndexOf)
-		{
-			if (vertexToGetIndexOf == VertexOnEnd[0])
-			{
-				return 0;
-			}
-			else
-			{
-				if (vertexToGetIndexOf != VertexOnEnd[1])
-				{
-					// if it is not the first one it must be the other one
-					throw new Exception("You must only ask to get the edge links for a MeshEdge that is linked to the given vertex.");
-				}
-				return 1;
-			}
-		}
-
-		public void RemoveFromMeshEdgeLinksOfVertex(IVertex vertexToRemoveFrom)
-		{
-			// lets first fix up the MeshEdge pointed to by the vertexToRemoveFrom
-			if (vertexToRemoveFrom.FirstMeshEdge == this)
-			{
-				MeshEdge nextMeshEdgeConnectedToThisVertex = vertexToRemoveFrom.FirstMeshEdge.GetNextMeshEdgeConnectedTo(vertexToRemoveFrom);
-				// if this is a radial loop
-				if (nextMeshEdgeConnectedToThisVertex == vertexToRemoveFrom.FirstMeshEdge)
-				{
-					// the vertex is connected to no edges
-					vertexToRemoveFrom.FirstMeshEdge = null;
-					return;
-				}
-				else
-				{
-					// hook it up to the next connected mesh edge
-					vertexToRemoveFrom.FirstMeshEdge = nextMeshEdgeConnectedToThisVertex;
-				}
+				meshEdges.Add(meshEdge);
 			}
 
-			// now lets clean up the edge links on the mesh edges that are still connected to the vertexToRemoveFrom
-			MeshEdge nextEdgeThisConnectedTo = GetNextMeshEdgeConnectedTo(vertexToRemoveFrom);
-			if (nextEdgeThisConnectedTo == this)
-			{
-				throw new Exception("You can't disconnect when you are the only mesh edge.");
-			}
-
-			MeshEdge edgeAfterEdgeWeAreConnectedTo = nextEdgeThisConnectedTo.GetNextMeshEdgeConnectedTo(vertexToRemoveFrom);
-			if (edgeAfterEdgeWeAreConnectedTo == this)
-			{
-				// if only 2 edges (this and other) then set the other one to a circular reference to itself
-				int indexOnEdgeWeAreConnectedTo = nextEdgeThisConnectedTo.GetVertexEndIndex(vertexToRemoveFrom);
-				nextEdgeThisConnectedTo.NextMeshEdgeFromEnd[indexOnEdgeWeAreConnectedTo] = nextEdgeThisConnectedTo;
-			}
-			else
-			{
-				// we need to find the edge that has a reference to this one
-				MeshEdge edgeConnectedToThis = edgeAfterEdgeWeAreConnectedTo;
-				while (edgeConnectedToThis.GetNextMeshEdgeConnectedTo(vertexToRemoveFrom) != this)
-				{
-					edgeConnectedToThis = edgeConnectedToThis.GetNextMeshEdgeConnectedTo(vertexToRemoveFrom);
-				}
-				int indexOfThisOnOther = edgeConnectedToThis.GetVertexEndIndex(vertexToRemoveFrom);
-				edgeConnectedToThis.NextMeshEdgeFromEnd[indexOfThisOnOther] = nextEdgeThisConnectedTo;
-			}
-
-			// and set this one to null (it has no vertices)
-			VertexOnEnd[GetVertexEndIndex(vertexToRemoveFrom)] = null;
-		}
-
-		public void Validate()
-		{
-		}
-
-		internal bool IsConnectedTo(IVertex vertexToCheck)
-		{
-			if (VertexOnEnd[0] == vertexToCheck || VertexOnEnd[1] == vertexToCheck)
-			{
-				return true;
-			}
-
-			return false;
-		}
-
-		public struct NextMeshEdgesFromEnds
-		{
-			private MeshEdge nextMeshEdge0;
-			private MeshEdge nextMeshEdge1;
-
-			public MeshEdge this[int index]
-			{
-				get
-				{
-					if (index == 0)
-					{
-						return nextMeshEdge0;
-					}
-					return nextMeshEdge1;
-				}
-				set
-				{
-					if (index == 0)
-					{
-						nextMeshEdge0 = value;
-					}
-					else
-					{
-						nextMeshEdge1 = value;
-					}
-				}
-			}
-		}
-
-		public struct VertexOnEnds
-		{
-			private IVertex vertex0;
-			private IVertex vertex1;
-
-			public IVertex this[int index]
-			{
-				get
-				{
-					if (index == 0)
-					{
-						return vertex0;
-					}
-					return vertex1;
-				}
-				set
-				{
-					if (index == 0)
-					{
-						vertex0 = value;
-					}
-					else
-					{
-						vertex1 = value;
-					}
-				}
-			}
+			return meshEdges;
 		}
 	}
 }

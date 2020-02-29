@@ -152,8 +152,8 @@ namespace Net3dBool
 		/// <returns>the closest distance from the vertex to the plane</returns>
 		public double DistanceFromPlane(Vertex vertex)
 		{
-			double distToV1 = this.Plane.DistanceToPlaneFromOrigin;
-			double distToVertex = Vector3.Dot(Normal, vertex.Position);
+			double distToV1 = this.Plane.DistanceFromOrigin;
+			double distToVertex = Vector3Ex.Dot(Normal, vertex.Position);
 			double distFromFacePlane = distToVertex - distToV1;
 			return distFromFacePlane;
 		}
@@ -198,7 +198,7 @@ namespace Net3dBool
 		{
 			get
 			{
-				if (planeCache.PlaneNormal == Vector3.Zero)
+				if (planeCache.Normal == Vector3.Zero)
 				{
 					Vector3 p1 = v1.Position;
 					Vector3 p2 = v2.Position;
@@ -210,7 +210,7 @@ namespace Net3dBool
 			}
 		}
 
-		public Vector3 Normal => Plane.PlaneNormal;
+		public Vector3 Normal => Plane.Normal;
 
 		public void Invert()
 		{
@@ -244,7 +244,8 @@ namespace Net3dBool
 				closestDistance = Double.MaxValue;
 				//for each face from the other solid...
 				//foreach (Face face in obj.Faces.AllObjects())
-				foreach (CsgFace face in obj.Faces.AlongRay(ray))
+				obj.Faces.AlongRay(ray);
+				foreach (var face in obj.Faces.QueryResults)
 				{
 					double hitDistance;
 					bool front;
@@ -252,7 +253,7 @@ namespace Net3dBool
 					//if ray intersects the plane...
 					if (face.Plane.RayHitPlane(ray, out hitDistance, out front))
 					{
-						double dotProduct = Vector3.Dot(face.Normal, ray.directionNormal);
+						double dotProduct = Vector3Ex.Dot(face.Normal, ray.directionNormal);
 						distance = hitDistance;
 						intersectionPoint = ray.origin + ray.directionNormal * hitDistance;
 						ray.maxDistanceToConsider = hitDistance;
@@ -304,7 +305,7 @@ namespace Net3dBool
 			}
 			else //face found: test dot product
 			{
-				double dotProduct = Vector3.Dot(closestFace.Normal, ray.directionNormal);
+				double dotProduct = Vector3Ex.Dot(closestFace.Normal, ray.directionNormal);
 
 				//distance = 0: coplanar faces
 				if (Math.Abs(closestDistance) < EqualityTolerance)

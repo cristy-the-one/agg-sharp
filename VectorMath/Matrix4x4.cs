@@ -503,6 +503,14 @@ namespace MatterHackers.VectorMath
 
 		#endregion public void Transpose()
 
+		public bool IsValid()
+		{
+			return Row0.IsValid()
+				&& Row1.IsValid()
+				&& Row2.IsValid()
+				&& Row3.IsValid();
+		}
+
 		#endregion Instance
 
 		#region Static
@@ -1017,8 +1025,8 @@ namespace MatterHackers.VectorMath
 			// There are lots of examples of look at code on the internet that don't do all these normalizes and also find the position
 			// through several dot products.  The problem with them is that they have a bit of error in that all the vectors aren't normal and need to be.
 			Vector3 z = Vector3.Normalize(eye - target);
-			Vector3 x = Vector3.Normalize(Vector3.Cross(up, z));
-			Vector3 y = Vector3.Normalize(Vector3.Cross(z, x));
+			Vector3 x = Vector3.Normalize(up.Cross(z));
+			Vector3 y = Vector3.Normalize(z.Cross(x));
 
 			Matrix4X4 rot = new Matrix4X4(new Vector4(x.X, y.X, z.X, 0.0),
 										new Vector4(x.Y, y.Y, z.Y, 0.0),
@@ -1349,17 +1357,12 @@ namespace MatterHackers.VectorMath
 		// http://stackoverflow.com/questions/8094867/good-gethashcode-override-for-list-of-foo-objects-respecting-the-order
 		/// </summary>
 		/// <returns></returns>
-		public long GetLongHashCode()
+		public ulong GetLongHashCode(ulong hash = 14695981039346656037)
 		{
-			long hash = 19;
-
-			unchecked
-			{
-				hash = hash * 31 + Row0.GetLongHashCode();
-				hash = hash * 31 + Row1.GetLongHashCode();
-				hash = hash * 31 + Row2.GetLongHashCode();
-				hash = hash * 31 + Row3.GetLongHashCode();
-			}
+			hash = Row0.GetLongHashCode(hash);
+			hash = Row1.GetLongHashCode(hash);
+			hash = Row2.GetLongHashCode(hash);
+			hash = Row3.GetLongHashCode(hash);
 
 			return hash;
 		}

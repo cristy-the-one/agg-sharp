@@ -47,13 +47,21 @@ namespace MatterHackers.Agg.VertexSource
 			private int allocatedVertices;
 			private VertexData[] vertexData;
 			private int numVertices;
+
 			public VertexDataManager()
 			{
 			}
 
-			public void AddVertex(double x, double y, ShapePath.FlagsAndCommand CommandAndFlags, int index = -1)
+			public VertexData this[int index]
 			{
-				index = index == -1 ? numVertices : index;
+				get => vertexData[index];
+				set => vertexData[index] = value;
+			}
+
+
+			public void AddVertex(double x, double y, ShapePath.FlagsAndCommand CommandAndFlags)
+			{
+				int index = numVertices;
 				allocate_if_required(numVertices);
 				vertexData[index] = new VertexData(CommandAndFlags, x, y);
 
@@ -85,11 +93,12 @@ namespace MatterHackers.Agg.VertexSource
 			{
 				if (numVertices != 0)
 				{
-					return vertex((int)(numVertices - 1), out x, out y);
+					return vertex(numVertices - 1, out x, out y);
 				}
 
-				x = new double();
-				y = new double();
+				x = 0;
+				y = 0;
+
 				return ShapePath.FlagsAndCommand.Stop;
 			}
 
@@ -97,21 +106,22 @@ namespace MatterHackers.Agg.VertexSource
 			{
 				if (numVertices > 0)
 				{
-					int index = (int)(numVertices - 1);
+					int index = numVertices - 1;
 					return vertexData[index].position.X;
 				}
 
-				return new double();
+				return 0;
 			}
 
 			public double last_y()
 			{
 				if (numVertices > 0)
 				{
-					int index = (int)(numVertices - 1);
+					int index = numVertices - 1;
 					return vertexData[index].position.Y;
 				}
-				return new double();
+
+				return 0;
 			}
 
 			public void modify_command(int index, ShapePath.FlagsAndCommand CommandAndFlags)
@@ -134,11 +144,12 @@ namespace MatterHackers.Agg.VertexSource
 			{
 				if (numVertices > 1)
 				{
-					return vertex((int)(numVertices - 2), out x, out y);
+					return vertex(numVertices - 2, out x, out y);
 				}
 
-				x = new double();
-				y = new double();
+				x = 0;
+				y = 0;
+
 				return ShapePath.FlagsAndCommand.Stop;
 			}
 
@@ -202,6 +213,7 @@ namespace MatterHackers.Agg.VertexSource
 
 		private int iteratorIndex;
 		private VertexDataManager vertexDataManager;
+
 		public VertexStorage()
 		{
 			vertexDataManager = new VertexDataManager();
@@ -223,7 +235,7 @@ namespace MatterHackers.Agg.VertexSource
 			}
 		}
 
-		static public bool OldEqualsNewStyle(IVertexSource control, IVertexSource test, double maxError = .0001)
+		public static bool OldEqualsNewStyle(IVertexSource control, IVertexSource test, double maxError = .0001)
 		{
 			control.rewind(0);
 			double controlX;
@@ -251,7 +263,7 @@ namespace MatterHackers.Agg.VertexSource
 			return false;
 		}
 
-		static public bool OldEqualsOldStyle(IVertexSource control, IVertexSource test, double maxError = .0001)
+		public static bool OldEqualsOldStyle(IVertexSource control, IVertexSource test, double maxError = .0001)
 		{
 			control.rewind(0);
 			double controlX;
@@ -276,6 +288,7 @@ namespace MatterHackers.Agg.VertexSource
 					{
 						return false;
 					}
+
 					index++;
 				}
 
@@ -309,6 +322,7 @@ namespace MatterHackers.Agg.VertexSource
 					}
 				}
 			}
+
 			return start;
 		}
 
@@ -361,6 +375,7 @@ namespace MatterHackers.Agg.VertexSource
 					}
 				}
 			}
+
 			return end;
 		}
 
@@ -394,6 +409,16 @@ namespace MatterHackers.Agg.VertexSource
 			{
 				vertexDataManager.AddVertex(x, y, PathAndFlags);
 			}
+		}
+
+		/// <summary>
+		/// Draws a quadratic Bézier curve from the current point to the target point using the supplied control point.
+		/// </summary>
+		/// <param name="controlPoint">The control point</param>
+		/// <param name="point">The new target point</param>
+		public void curve3(Vector2 controlPoint, Vector2 point)
+		{
+			curve3(controlPoint.X, controlPoint.Y, point.X, point.Y);
 		}
 
 		/// <summary>
@@ -550,11 +575,9 @@ namespace MatterHackers.Agg.VertexSource
 		//--------------------------------------------------------------------
 		public void flip_x(double x1, double x2)
 		{
-			int i;
-			double x, y;
-			for (i = 0; i < vertexDataManager.total_vertices(); i++)
+			for (int i = 0; i < vertexDataManager.total_vertices(); i++)
 			{
-				ShapePath.FlagsAndCommand PathAndFlags = vertexDataManager.vertex(i, out x, out y);
+				ShapePath.FlagsAndCommand PathAndFlags = vertexDataManager.vertex(i, out double x, out double y);
 				if (ShapePath.is_vertex(PathAndFlags))
 				{
 					vertexDataManager.modify_vertex(i, x2 - x + x1, y);
@@ -564,11 +587,9 @@ namespace MatterHackers.Agg.VertexSource
 
 		public void flip_y(double y1, double y2)
 		{
-			int i;
-			double x, y;
-			for (i = 0; i < vertexDataManager.total_vertices(); i++)
+			for (int i = 0; i < vertexDataManager.total_vertices(); i++)
 			{
-				ShapePath.FlagsAndCommand PathAndFlags = vertexDataManager.vertex(i, out x, out y);
+				ShapePath.FlagsAndCommand PathAndFlags = vertexDataManager.vertex(i, out double x, out double y);
 				if (ShapePath.is_vertex(PathAndFlags))
 				{
 					vertexDataManager.modify_vertex(i, x, y2 - y + y1);
@@ -670,6 +691,11 @@ namespace MatterHackers.Agg.VertexSource
 			return vertexDataManager.last_vertex(out x, out y);
 		}
 
+		public void LineTo(Point2D position)
+		{
+			LineTo(position.x, position.y);
+		}
+
 		public void LineTo(Vector2 position)
 		{
 			LineTo(position.X, position.Y);
@@ -695,14 +721,14 @@ namespace MatterHackers.Agg.VertexSource
 			vertexDataManager.modify_vertex(index, x, y, PathAndFlags);
 		}
 
-		public void MoveTo(Vector2 position, int index = -1)
+		public void MoveTo(Vector2 position)
 		{
-			MoveTo(position.X, position.Y, index);
+			MoveTo(position.X, position.Y);
 		}
 
-		public void MoveTo(double x, double y, int index = -1)
+		public void MoveTo(double x, double y)
 		{
-			vertexDataManager.AddVertex(x, y, ShapePath.FlagsAndCommand.MoveTo, index);
+			vertexDataManager.AddVertex(x, y, ShapePath.FlagsAndCommand.MoveTo);
 		}
 
 		public string SvgDString
@@ -735,7 +761,7 @@ namespace MatterHackers.Agg.VertexSource
 				}
 				else if (vertexData.IsClose)
 				{
-					ReverseAndAdd(dstring, pendingPositions);
+					ReverseAndAdd(dstring, pendingPositions, closePath: true);
 				}
 				else // Assuming this is a line to. if (vertexData.IsLineTo)
 				{
@@ -743,7 +769,7 @@ namespace MatterHackers.Agg.VertexSource
 				}
 			}
 
-			if(pendingPositions.Count > 0)
+			if (pendingPositions.Count > 0)
 			{
 				ReverseAndAdd(dstring, pendingPositions);
 			}
@@ -751,10 +777,11 @@ namespace MatterHackers.Agg.VertexSource
 			return dstring.ToString();
 		}
 
-		private static void ReverseAndAdd(StringBuilder dstring, List<Vector2> pendingPositions)
+		private static void ReverseAndAdd(StringBuilder dstring, List<Vector2> pendingPositions, bool closePath = false)
 		{
 			// reverse the output so it is wound correctly for SVG
 			bool first = true;
+
 			for (int i = pendingPositions.Count - 1; i >= 0; i--)
 			{
 				if (first)
@@ -767,7 +794,12 @@ namespace MatterHackers.Agg.VertexSource
 					dstring.Append($"L {pendingPositions[i].X:0.###} {pendingPositions[i].Y:0.###}");
 				}
 			}
-			dstring.Append("Z");
+
+			if (closePath)
+			{
+				dstring.Append("Z");
+			}
+
 			pendingPositions.Clear();
 		}
 
@@ -821,37 +853,32 @@ namespace MatterHackers.Agg.VertexSource
 						{
 							do
 							{
-								parseIndex++;
-								Vector2 controlPoint1;
-								if (foundSecondControlPoint)
-								{
-									if (command == 's')
+								Vector2 controlPoint = lastXY;
+
+								if (vertexDataManager.last_command() == ShapePath.FlagsAndCommand.Curve4)
 									{
-										controlPoint1 = new Vector2();
-									}
-									else
-									{
-										controlPoint1 = curXY;
-									}
+									controlPoint = Reflect(secondControlPoint, lastXY);
 								}
 								else
 								{
-									controlPoint1.X = curXY.X - (secondControlPoint.X - curXY.X);
-									controlPoint1.Y = curXY.Y - (secondControlPoint.Y - curXY.Y);
+									controlPoint = curXY;
 								}
+
+								parseIndex++;
+								
 								foundSecondControlPoint = true;
+
 								secondControlPoint.X = agg_basics.ParseDouble(dString, ref parseIndex, fastSimpleNumbers);
 								secondControlPoint.Y = agg_basics.ParseDouble(dString, ref parseIndex, fastSimpleNumbers);
 								curXY.X = agg_basics.ParseDouble(dString, ref parseIndex, fastSimpleNumbers);
 								curXY.Y = agg_basics.ParseDouble(dString, ref parseIndex, fastSimpleNumbers);
 								if (command == 's')
 								{
-									controlPoint1 += lastXY;
 									secondControlPoint += lastXY;
 									curXY += lastXY;
 								}
 
-								this.curve4(controlPoint1.X, controlPoint1.Y, secondControlPoint.X, secondControlPoint.Y, curXY.X, curXY.Y);
+								this.curve4(controlPoint.X, controlPoint.Y, secondControlPoint.X, secondControlPoint.Y, curXY.X, curXY.Y);
 
 								// if the next element is another coordinate than we just continue to add more curves.
 							} while (NextElementIsANumber(dString, parseIndex));
@@ -975,6 +1002,32 @@ namespace MatterHackers.Agg.VertexSource
 			}
 		}
 
+		private static Vector2 Reflect(Vector2 point, Vector2 mirror)
+		{
+			double x, y, dx, dy;
+			dx = Math.Abs(mirror.X - point.X);
+			dy = Math.Abs(mirror.Y - point.Y);
+
+			if (mirror.X >= point.X)
+			{
+				x = mirror.X + dx;
+			}
+			else
+			{
+				x = mirror.X - dx;
+			}
+			if (mirror.Y >= point.Y)
+			{
+				y = mirror.Y + dy;
+			}
+			else
+			{
+				y = mirror.Y - dy;
+			}
+
+			return new Vector2(x, y);
+		}
+
 		HashSet<char> validNumberStartingCharacters = new HashSet<char> { '-', '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' };
 		HashSet<char> validSkipCharacters = new HashSet<char> { ' ', ',' };
 		private bool NextElementIsANumber(string dString, int parseIndex)
@@ -985,7 +1038,8 @@ namespace MatterHackers.Agg.VertexSource
 				parseIndex++;
 			}
 
-			if (validNumberStartingCharacters.Contains(dString[parseIndex]))
+			if (parseIndex < dString.Length
+				&& validNumberStartingCharacters.Contains(dString[parseIndex]))
 			{
 				return true;
 			}
@@ -1123,7 +1177,13 @@ namespace MatterHackers.Agg.VertexSource
 			}
 		}
 
-		public ShapePath.FlagsAndCommand vertex(int index, out double x, out double y)
+		public VertexData this[int index]
+		{
+			get => vertexDataManager[index];
+			set => vertexDataManager[index] = value;
+		}
+
+	public ShapePath.FlagsAndCommand vertex(int index, out double x, out double y)
 		{
 			return vertexDataManager.vertex(index, out x, out y);
 		}

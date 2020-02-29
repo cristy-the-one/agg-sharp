@@ -35,7 +35,7 @@ namespace MatterHackers.Agg.Font
 			this.glyph = glyph;
 		}
 
-		override public IEnumerable<VertexData> Vertices()
+		public override IEnumerable<VertexData> Vertices()
 		{
 			// return all the data for the glyph
 			foreach (VertexData vertexData in glyph.Vertices())
@@ -123,15 +123,15 @@ namespace MatterHackers.Agg.Font
 
 		private double emSizeInPixels;
 		private double currentEmScaling;
-		private bool flatenCurves = true;
+		private bool flattenCurves = true;
 
-		public StyledTypeFace(TypeFace typeFace, double emSizeInPoints, bool underline = false, bool flatenCurves = true)
+		public StyledTypeFace(TypeFace typeFace, double emSizeInPoints, bool underline = false, bool flattenCurves = true)
 		{
 			this.TypeFace = typeFace;
 			emSizeInPixels = emSizeInPoints / PointsPerInch * PixelsPerInch;
 			currentEmScaling = emSizeInPixels / typeFace.UnitsPerEm;
 			DoUnderline = underline;
-			FlatenCurves = flatenCurves;
+			FlattenCurves = flattenCurves;
 		}
 
 		public bool DoUnderline { get; set; }
@@ -141,72 +141,29 @@ namespace MatterHackers.Agg.Font
 		/// <para>You may want to disable this so you can flatten the curve after other transforms have been applied,</para>
 		/// <para>such as skewing or scaling.  Rotation and Translation will not alter how a curve is flattened.</para>
 		/// </summary>
-		public bool FlatenCurves
+		public bool FlattenCurves
 		{
-			get
-			{
-				return flatenCurves;
-			}
-
-			set
-			{
-				flatenCurves = value;
-			}
+			get => flattenCurves;
+			set => flattenCurves = value;
 		}
 
 		/// <summary>
 		/// Sets the Em size for the font in pixels.
 		/// </summary>
-		public double EmSizeInPixels
-		{
-			get
-			{
-				return emSizeInPixels;
-			}
-		}
+		public double EmSizeInPixels => emSizeInPixels;
 
 		/// <summary>
 		/// Sets the Em size for the font assuming there are 72 points per inch and there are 96 pixels per inch.
 		/// </summary>
-		public double EmSizeInPoints
-		{
-			get
-			{
-				return emSizeInPixels / PixelsPerInch * PointsPerInch;
-			}
-		}
+		public double EmSizeInPoints => emSizeInPixels / PixelsPerInch * PointsPerInch;
 
-		public double AscentInPixels
-		{
-			get
-			{
-				return TypeFace.Ascent * currentEmScaling;
-			}
-		}
+		public double AscentInPixels => TypeFace.Ascent * currentEmScaling;
 
-		public double DescentInPixels
-		{
-			get
-			{
-				return TypeFace.Descent * currentEmScaling;
-			}
-		}
+		public double DescentInPixels => TypeFace.Descent * currentEmScaling;
 
-		public double XHeightInPixels
-		{
-			get
-			{
-				return TypeFace.X_height * currentEmScaling;
-			}
-		}
+		public double XHeightInPixels => TypeFace.X_height * currentEmScaling;
 
-		public double CapHeightInPixels
-		{
-			get
-			{
-				return TypeFace.Cap_height * currentEmScaling;
-			}
-		}
+		public double CapHeightInPixels => TypeFace.Cap_height * currentEmScaling;
 
 		public RectangleDouble BoundingBoxInPixels
 		{
@@ -218,21 +175,9 @@ namespace MatterHackers.Agg.Font
 			}
 		}
 
-		public double UnderlineThicknessInPixels
-		{
-			get
-			{
-				return TypeFace.Underline_thickness * currentEmScaling;
-			}
-		}
+		public double UnderlineThicknessInPixels => TypeFace.Underline_thickness * currentEmScaling;
 
-		public double UnderlinePositionInPixels
-		{
-			get
-			{
-				return TypeFace.Underline_position * currentEmScaling;
-			}
-		}
+		public double UnderlinePositionInPixels => TypeFace.Underline_position * currentEmScaling;
 
 		public ImageBuffer GetImageForCharacter(char character, double xFraction, double yFraction, Color color)
 		{
@@ -241,9 +186,8 @@ namespace MatterHackers.Agg.Font
 				throw new ArgumentException("The x and y fractions must both be between 0 and 1.");
 			}
 
-			ImageBuffer imageForCharacter;
-			Dictionary<char, ImageBuffer> characterImageCache = StyledTypeFaceImageCache.GetCorrectCache(this.TypeFace, color, this.emSizeInPixels);
-			characterImageCache.TryGetValue(character, out imageForCharacter);
+			var characterImageCache = StyledTypeFaceImageCache.GetCorrectCache(this.TypeFace, color, emSizeInPixels);
+			characterImageCache.TryGetValue(character, out ImageBuffer imageForCharacter);
 			if (imageForCharacter != null)
 			{
 				return imageForCharacter;
@@ -255,18 +199,15 @@ namespace MatterHackers.Agg.Font
 				return null;
 			}
 
-			glyphForCharacter.rewind(0);
-			double x, y;
-			ShapePath.FlagsAndCommand curCommand = glyphForCharacter.vertex(out x, out y);
-			RectangleDouble bounds = new RectangleDouble(x, y, x, y);
-			while (curCommand != ShapePath.FlagsAndCommand.Stop)
-			{
-				bounds.ExpandToInclude(x, y);
-				curCommand = glyphForCharacter.vertex(out x, out y);
-			}
+			var bounds = glyphForCharacter.GetBounds();
 
-			ImageBuffer charImage = new ImageBuffer(Math.Max((int)(bounds.Width + .5), 1) + 1, Math.Max((int)Math.Ceiling(EmSizeInPixels + (-DescentInPixels) + .5), 1) + 1, 32, new BlenderPreMultBGRA());
-			Graphics2D graphics = charImage.NewGraphics2D();
+			var charImage = new ImageBuffer(
+				Math.Max((int)(bounds.Right + .5), 1) + 1,
+				Math.Max((int)Math.Ceiling(EmSizeInPixels + (-DescentInPixels) + .5), 1) + 1,
+				32,
+				new BlenderPreMultBGRA());
+
+			var graphics = charImage.NewGraphics2D();
 			graphics.Render(glyphForCharacter, xFraction, yFraction + (-DescentInPixels) + 1, color);
 			characterImageCache[character] = charImage;
 
@@ -283,11 +224,12 @@ namespace MatterHackers.Agg.Font
 				{
 					sourceGlyph = new GlyphWithUnderline(sourceGlyph, TypeFace.GetAdvanceForCharacter(character), TypeFace.Underline_position, TypeFace.Underline_thickness);
 				}
-				Affine glyphTransform = Affine.NewIdentity();
+
+				var glyphTransform = Affine.NewIdentity();
 				glyphTransform *= Affine.NewScaling(currentEmScaling);
 				IVertexSource characterGlyph = new VertexSourceApplyTransform(sourceGlyph, glyphTransform);
 
-				if (FlatenCurves)
+				if (FlattenCurves)
 				{
 					characterGlyph = new FlattenCurves(characterGlyph)
 					{

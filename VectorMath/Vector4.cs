@@ -25,6 +25,7 @@ SOFTWARE.
 #endregion --- License ---
 
 using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace MatterHackers.VectorMath
@@ -161,6 +162,25 @@ namespace MatterHackers.VectorMath
 
 		#endregion Constructors
 
+		public static Vector4 Parse(string s)
+		{
+			var result = Vector4.Zero;
+
+			var values = s.Split(',').Select(sValue =>
+			{
+				double.TryParse(sValue, out double number);
+				return number;
+			}).ToArray();
+
+			for (int i = 0; i < Math.Min(4, values.Length); i++)
+			{
+				result[i] = values[i];
+			}
+
+			return result;
+		}
+
+
 		#region Public Members
 
 		#region Properties
@@ -270,6 +290,19 @@ namespace MatterHackers.VectorMath
 		}
 
 		#endregion public void Normalize()
+
+		public bool IsValid()
+		{
+			if(double.IsNaN(X) || double.IsInfinity(X)
+				|| double.IsNaN(Y) || double.IsInfinity(Y)
+				|| double.IsNaN(Z) || double.IsInfinity(Z)
+				|| double.IsNaN(W) || double.IsInfinity(W))
+			{
+				return false;
+			}
+
+			return true;
+		}
 
 		#endregion Instance
 
@@ -673,7 +706,7 @@ namespace MatterHackers.VectorMath
 		public static Vector4 Transform(Vector4 vec, Matrix4X4 mat)
 		{
 			Vector4 result;
-			Transform(ref vec, ref mat, out result);
+			Transform(vec, ref mat, out result);
 			return result;
 		}
 
@@ -681,7 +714,7 @@ namespace MatterHackers.VectorMath
 		/// <param name="vec">The vector to transform</param>
 		/// <param name="mat">The desired transformation</param>
 		/// <param name="result">The transformed vector</param>
-		public static void Transform(ref Vector4 vec, ref Matrix4X4 mat, out Vector4 result)
+		public static void Transform(Vector4 vec, ref Matrix4X4 mat, out Vector4 result)
 		{
 			result = new Vector4(
 				vec.X * mat.Row0.X + vec.Y * mat.Row1.X + vec.Z * mat.Row2.X + vec.W * mat.Row3.X,
@@ -889,19 +922,37 @@ namespace MatterHackers.VectorMath
 			return new { X, Y, Z, W }.GetHashCode();
 		}
 
+		public static ulong GetLongHashCode(double data, ulong hash = 14695981039346656037)
+		{
+			return ComputeHash(BitConverter.GetBytes(data), hash);
+		}
+
+		// FNV-1a (64-bit) non-cryptographic hash function.
+		// Adapted from: http://github.com/jakedouglas/fnv-java
+		public static ulong ComputeHash(byte[] bytes, ulong hash = 14695981039346656037)
+		{
+			const ulong fnv64Prime = 0x100000001b3;
+
+			for (var i = 0; i < bytes.Length; i++)
+			{
+				hash = hash ^ bytes[i];
+				hash *= fnv64Prime;
+			}
+
+			return hash;
+		}
+
 		/// <summary>
 		/// return a 64 bit hash code proposed by Jon Skeet
 		// http://stackoverflow.com/questions/8094867/good-gethashcode-override-for-list-of-foo-objects-respecting-the-order
 		/// </summary>
 		/// <returns></returns>
-		public long GetLongHashCode()
+		public ulong GetLongHashCode(ulong hash = 14695981039346656037)
 		{
-			long hash = 19;
-
-			hash = hash * 31 + X.GetHashCode();
-			hash = hash * 31 + Y.GetHashCode();
-			hash = hash * 31 + Z.GetHashCode();
-			hash = hash * 31 + W.GetHashCode();
+			hash = GetLongHashCode(X, hash);
+			hash = GetLongHashCode(Y, hash);
+			hash = GetLongHashCode(Z, hash);
+			hash = GetLongHashCode(W, hash);
 
 			return hash;
 		}
