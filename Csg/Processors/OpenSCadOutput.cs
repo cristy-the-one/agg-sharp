@@ -34,6 +34,7 @@ using MatterHackers.VectorMath;
 using System;
 using System.IO;
 using System.Text;
+using System.Globalization;
 
 namespace MatterHackers.Csg.Processors
 {
@@ -98,11 +99,11 @@ namespace MatterHackers.Csg.Processors
 
 			if (objectToProcess.CreateCentered)
 			{
-				info += "cube([" + objectToProcess.Size.X.ToString() + ", " + objectToProcess.Size.Y.ToString() + ", " + objectToProcess.Size.Z.ToString() + "], center=true);" + AddNameAsComment(objectToProcess);
+				info += "cube([" + objectToProcess.Size.X.ToString(CultureInfo.InvariantCulture) + ", " + objectToProcess.Size.Y.ToString(CultureInfo.InvariantCulture) + ", " + objectToProcess.Size.Z.ToString(CultureInfo.InvariantCulture) + "], center=true);" + AddNameAsComment(objectToProcess);
 			}
 			else
 			{
-				info += "cube([" + objectToProcess.Size.X.ToString() + ", " + objectToProcess.Size.Y.ToString() + ", " + objectToProcess.Size.Z.ToString() + "]);" + AddNameAsComment(objectToProcess);
+				info += "cube([" + objectToProcess.Size.X.ToString(CultureInfo.InvariantCulture) + ", " + objectToProcess.Size.Y.ToString(CultureInfo.InvariantCulture) + ", " + objectToProcess.Size.Z.ToString(CultureInfo.InvariantCulture) + "]);" + AddNameAsComment(objectToProcess);
 			}
 			return ApplyIndent(info, level);
 		}
@@ -126,7 +127,7 @@ namespace MatterHackers.Csg.Processors
 		{
 			string info = AddRenderInfoIfReqired(objectToProcess);
 
-			info += "cylinder(r1=" + objectToProcess.Radius1.ToString() + ", r2=" + objectToProcess.Radius2.ToString() + ", h=" + objectToProcess.Height.ToString() + ", center=true, $fn={0});".FormatWith(NumberOfCylinderSegments) + AddNameAsComment(objectToProcess);
+			info += "cylinder(r1=" + objectToProcess.Radius1.ToString(CultureInfo.InvariantCulture) + ", r2=" + objectToProcess.Radius2.ToString(CultureInfo.InvariantCulture) + ", h=" + objectToProcess.Height.ToString(CultureInfo.InvariantCulture) + ", center=true, $fn={0});".FormatWith(NumberOfCylinderSegments) + AddNameAsComment(objectToProcess);
 
 			return ApplyIndent(info, level);
 		}
@@ -140,11 +141,11 @@ namespace MatterHackers.Csg.Processors
 			string info = AddRenderInfoIfReqired(objectToProcess);
 
 			string rotate_extrude = "rotate_extrude(convexity = 10, $fn = {0})".FormatWith(NumberOfCylinderSegments);
-			string translate = "translate([" + objectToProcess.AxisOffset.ToString() + ", 0, 0])";
+			string translate = "translate([" + objectToProcess.AxisOffset.ToString(CultureInfo.InvariantCulture) + ", 0, 0])";
 			string thingToRotate = "polygon( points=[";
 			foreach (Vector2 point in objectToProcess.Points)
 			{
-				thingToRotate += "[" + point.X.ToString() + ", " + point.Y.ToString() + "], ";
+				thingToRotate += "[" + point.X.ToString(CultureInfo.InvariantCulture) + ", " + point.Y.ToString(CultureInfo.InvariantCulture) + "], ";
 			}
 			thingToRotate += "] );";
 
@@ -171,7 +172,7 @@ namespace MatterHackers.Csg.Processors
 			string thingToRotate = "polygon( points=[";
 			foreach (Vector2 point in objectToProcess.Points)
 			{
-				thingToRotate += "[" + point.X.ToString() + ", " + point.Y.ToString() + "], ";
+				thingToRotate += "[" + point.X.ToString(CultureInfo.InvariantCulture) + ", " + point.Y.ToString(CultureInfo.InvariantCulture) + "], ";
 			}
 			thingToRotate += "] );";
 
@@ -209,7 +210,7 @@ namespace MatterHackers.Csg.Processors
 		{
 			string info = AddRenderInfoIfReqired(objectToProcess);
 
-			info += "cylinder(r1=" + objectToProcess.Radius1.ToString() + ", r2=" + objectToProcess.Radius1.ToString() + ", h=" + objectToProcess.Height.ToString() + ", center=true, $fn=" + objectToProcess.NumSides.ToString() + ");" + AddNameAsComment(objectToProcess);
+			info += "cylinder(r1=" + objectToProcess.Radius1.ToString(CultureInfo.InvariantCulture) + ", r2=" + objectToProcess.Radius1.ToString(CultureInfo.InvariantCulture) + ", h=" + objectToProcess.Height.ToString(CultureInfo.InvariantCulture) + ", center=true, $fn=" + objectToProcess.NumSides.ToString(CultureInfo.InvariantCulture) + ");" + AddNameAsComment(objectToProcess);
 
 			return ApplyIndent(info, level);
 		}
@@ -222,7 +223,7 @@ namespace MatterHackers.Csg.Processors
 		{
 			string info = AddRenderInfoIfReqired(objectToProcess);
 
-			info += "sphere(" + objectToProcess.Radius.ToString() + ", $fn={0});".FormatWith(NumberOfCylinderSegments) + AddNameAsComment(objectToProcess);
+			info += "sphere(" + objectToProcess.Radius.ToString(CultureInfo.InvariantCulture) + ", $fn={0});".FormatWith(NumberOfCylinderSegments) + AddNameAsComment(objectToProcess);
 			return ApplyIndent(info, level);
 		}
 
